@@ -1,0 +1,5 @@
+.env
+jira
+jiractrl
+dist/
+*.test

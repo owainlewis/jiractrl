@@ -1,0 +1,16 @@
+[jira]
+base_url = "https://jira.example.com"
+token = "your-personal-access-token"
+
+[defaults]
+max_results = 50
+output = "text"
+
+[profiles.my_open]
+jql = "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC"
+fields = ["summary", "status", "assignee", "priority", "issuetype", "created", "updated"]
+max_results = 50
+
+[profiles.project_recent]
+jql = "project = MYPROJ AND updated >= -7d ORDER BY updated DESC"
+max_results = 100

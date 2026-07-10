@@ -1,3 +1,3 @@
-module github.com/owainlewis/jirac
+module github.com/owainlewis/jiractrl
 
 go 1.22

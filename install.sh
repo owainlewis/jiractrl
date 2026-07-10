@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-REPO="${JIRACTRL_REPO:-owainlewis/jirac}"
+REPO="${JIRACTRL_REPO:-owainlewis/jiractrl}"
 VERSION="${JIRACTRL_VERSION:-latest}"
 INSTALL_DIR="${JIRACTRL_INSTALL_DIR:-/usr/local/bin}"
 

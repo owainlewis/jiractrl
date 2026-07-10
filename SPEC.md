@@ -169,14 +169,14 @@ Text output should be concise and stable enough for humans, but agents should pr
 Target one-line install:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/owainlewis/jirac/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/owainlewis/jiractrl/main/install.sh | sh
 ```
 
 Package options:
 
 - GitHub Releases with Darwin/Linux binaries.
 - Homebrew tap later if the project becomes useful.
-- `go install github.com/owainlewis/jirac@latest` once published.
+- `go install github.com/owainlewis/jiractrl@latest` once published.
 
 ## CI/CD
 

@@ -21,13 +21,13 @@ go build -o jiractrl .
 Planned one-line install after the GitHub repository is published:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/owainlewis/jirac/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/owainlewis/jiractrl/main/install.sh | sh
 ```
 
 Planned Go install:
 
 ```sh
-go install github.com/owainlewis/jirac@latest
+go install github.com/owainlewis/jiractrl@latest
 ```
 
 ## Configure

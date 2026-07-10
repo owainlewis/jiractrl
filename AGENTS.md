@@ -1,0 +1,82 @@
+# AGENTS.md
+
+Guidance for AI agents using or modifying `jiractrl`.
+
+## Purpose
+
+`jiractrl` is a command line control plane for Jira. It gives agents a small, predictable interface for reading and mutating Jira without embedding organization-specific workflow rules in the tool.
+
+Prefer JSON output for agent workflows.
+
+## Safety Rules
+
+- Treat read commands as safe: `auth check`, `search`, `get`, `fields`, `issue-fields`, `transitions`, `profiles`, `triage`.
+- Treat write commands as mutating Jira: `create`, `update`, `comment`, `transition`.
+- Before writing custom fields, run `jiractrl fields --json` and, when possible, `jiractrl issue-fields ISSUE --json`.
+- Do not guess custom field IDs.
+- Do not store tokens in prompts, logs, commits, or generated docs.
+- Prefer profiles for repeated JQL instead of hardcoding queries into scripts.
+- Use `--config PATH` when operating in a non-default environment.
+
+## Recommended Agent Flow
+
+1. Check auth:
+
+   ```sh
+   jiractrl auth check
+   ```
+
+2. Discover profiles:
+
+   ```sh
+   jiractrl profiles list
+   jiractrl profiles show NAME
+   ```
+
+3. Read with JSON:
+
+   ```sh
+   jiractrl search --profile NAME --json
+   jiractrl get ISSUE-123 --json
+   ```
+
+4. Inspect fields before custom updates:
+
+   ```sh
+   jiractrl fields --json
+   jiractrl issue-fields ISSUE-123 --json
+   ```
+
+5. Write only with explicit user intent:
+
+   ```sh
+   jiractrl comment ISSUE-123 --body "..."
+   jiractrl update ISSUE-123 --field customfield_12345=value
+   jiractrl transition ISSUE-123 --to "In Progress"
+   ```
+
+## Output Expectations
+
+- `--json` prints machine-readable output to stdout.
+- Human text output is concise and intended for terminals.
+- Errors print through the CLI caller and should be treated as failed operations.
+
+## Project Structure
+
+- `main.go`: process entrypoint only.
+- `internal/cli`: command parsing, help text, text/JSON output.
+- `internal/config`: config file, environment overrides, profiles.
+- `internal/jira`: Jira REST client and response types.
+- `internal/triage`: read-only issue quality heuristics.
+- `docs/agent-guide.md`: usage guide for agents and automation.
+
+## Development
+
+Run:
+
+```sh
+go test ./...
+go build -o jiractrl .
+```
+
+Keep the core generic. Organization-specific workflows should live in config profiles, wrapper scripts, or downstream agent instructions.

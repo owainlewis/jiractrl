@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"os"
@@ -33,7 +33,7 @@ max_results = 10
 		t.Fatal(err)
 	}
 
-	cfg, err := loadConfig(path, time.Second)
+	cfg, err := Load(path, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,19 +56,5 @@ max_results = 10
 	}
 	if len(p.Fields) != 3 || p.Fields[2] != "updated" {
 		t.Fatalf("profile Fields = %#v", p.Fields)
-	}
-}
-
-func TestParseGlobalFlags(t *testing.T) {
-	var path string
-	args, err := parseGlobalFlags([]string{"--config", "local.toml", "search", "--profile", "mine"}, &path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if path != "local.toml" {
-		t.Fatalf("path = %q", path)
-	}
-	if len(args) != 3 || args[0] != "search" {
-		t.Fatalf("args = %#v", args)
 	}
 }

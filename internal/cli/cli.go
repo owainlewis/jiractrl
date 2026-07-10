@@ -1,0 +1,568 @@
+package cli
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/owainlewis/jiractrl/internal/config"
+	"github.com/owainlewis/jiractrl/internal/jira"
+	"github.com/owainlewis/jiractrl/internal/triage"
+)
+
+type App struct {
+	Stdout io.Writer
+	Stderr io.Writer
+}
+
+func Run(args []string, stdout, stderr io.Writer) error {
+	return App{Stdout: stdout, Stderr: stderr}.Run(args)
+}
+
+func (a App) Run(args []string) error {
+	var configPath string
+	args, err := parseGlobalFlags(args, &configPath)
+	if err != nil {
+		return err
+	}
+	if len(args) == 0 {
+		printUsage(a.Stdout)
+		return nil
+	}
+
+	switch args[0] {
+	case "auth":
+		return a.runAuth(args[1:], configPath)
+	case "search", "list":
+		return a.runSearch(args[1:], configPath)
+	case "get":
+		return a.runGet(args[1:], configPath)
+	case "create":
+		return a.runCreate(args[1:], configPath)
+	case "update":
+		return a.runUpdate(args[1:], configPath)
+	case "comment":
+		return a.runComment(args[1:], configPath)
+	case "transitions":
+		return a.runTransitions(args[1:], configPath)
+	case "transition":
+		return a.runTransition(args[1:], configPath)
+	case "fields":
+		return a.runFields(args[1:], configPath)
+	case "issue-fields":
+		return a.runIssueFields(args[1:], configPath)
+	case "profiles":
+		return a.runProfiles(args[1:], configPath)
+	case "triage":
+		return a.runTriage(args[1:], configPath)
+	case "help", "-h", "--help":
+		if len(args) > 1 {
+			printCommandHelp(a.Stdout, args[1])
+			return nil
+		}
+		printUsage(a.Stdout)
+		return nil
+	default:
+		printUsage(a.Stderr)
+		return fmt.Errorf("unknown command %q", args[0])
+	}
+}
+
+func parseGlobalFlags(args []string, configPath *string) ([]string, error) {
+	var out []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--config":
+			if i+1 >= len(args) {
+				return nil, errors.New("missing value for --config")
+			}
+			*configPath = args[i+1]
+			i++
+		case strings.HasPrefix(arg, "--config="):
+			*configPath = strings.TrimPrefix(arg, "--config=")
+		default:
+			out = append(out, arg)
+		}
+	}
+	return out, nil
+}
+
+func (a App) runAuth(args []string, configPath string) error {
+	if len(args) == 0 || args[0] != "check" {
+		return errors.New("usage: jiractrl auth check")
+	}
+
+	client, err := a.client(configPath, 15*time.Second)
+	if err != nil {
+		return err
+	}
+	me, err := client.Myself(context.Background())
+	if err != nil {
+		return err
+	}
+
+	name := firstNonEmpty(me.DisplayName, me.Name, me.EmailAddress, me.Key, "(authenticated user)")
+	fmt.Fprintf(a.Stdout, "Authenticated as %s\n", name)
+	return nil
+}
+
+func (a App) runSearch(args []string, configPath string) error {
+	fs := newFlagSet("search")
+	jql := fs.String("jql", "", "JQL query to run")
+	profileName := fs.String("profile", "", "profile from config.toml to use")
+	maxResults := fs.Int("max", 0, "maximum number of issues to return")
+	rawJSON := fs.Bool("json", false, "print JSON response")
+	fields := fs.String("fields", "", "comma-separated fields to request")
+	withDescription := fs.Bool("description", false, "include issue descriptions in text output")
+
+	if err := fs.Parse(args); err != nil {
+		return errors.New("usage: jiractrl search --jql '<query>' [--max 20] [--json] [--description]")
+	}
+
+	cfg, err := config.Load(configPath, 30*time.Second)
+	if err != nil {
+		return err
+	}
+
+	selectedFields := strings.TrimSpace(*fields)
+	selectedMax := *maxResults
+	if strings.TrimSpace(*profileName) != "" {
+		p, ok := cfg.Profiles[*profileName]
+		if !ok {
+			return fmt.Errorf("unknown profile %q", *profileName)
+		}
+		if strings.TrimSpace(*jql) == "" {
+			*jql = p.JQL
+		}
+		if selectedFields == "" && len(p.Fields) > 0 {
+			selectedFields = strings.Join(p.Fields, ",")
+		}
+		if selectedMax == 0 && p.MaxResults > 0 {
+			selectedMax = p.MaxResults
+		}
+	}
+	if strings.TrimSpace(*jql) == "" {
+		return errors.New("missing required --jql or --profile with jql")
+	}
+	if selectedFields == "" {
+		selectedFields = config.DefaultFields
+	}
+	if selectedMax == 0 {
+		selectedMax = cfg.DefaultMaxResults
+	}
+	if selectedMax == 0 {
+		selectedMax = 20
+	}
+	if selectedMax < 1 || selectedMax > 1000 {
+		return errors.New("--max must be between 1 and 1000")
+	}
+
+	client := jira.NewClient(cfg.BaseURL, cfg.Token, cfg.Timeout)
+	if *withDescription {
+		selectedFields = addField(selectedFields, "description")
+	}
+	result, err := client.Search(context.Background(), *jql, selectedFields, selectedMax)
+	if err != nil {
+		return err
+	}
+
+	if *rawJSON {
+		return writeJSON(a.Stdout, result)
+	}
+	printIssues(a.Stdout, result, *withDescription)
+	return nil
+}
+
+func (a App) runGet(args []string, configPath string) error {
+	fs := newFlagSet("get")
+	rawJSON := fs.Bool("json", false, "print JSON response")
+	fields := fs.String("fields", "summary,description,status,assignee,priority,issuetype,labels,created,updated,comment", "comma-separated fields to request")
+
+	if err := fs.Parse(args); err != nil {
+		return errors.New("usage: jiractrl get ISSUE-123 [--json]")
+	}
+	if fs.NArg() != 1 || strings.TrimSpace(fs.Arg(0)) == "" {
+		return errors.New("usage: jiractrl get ISSUE-123 [--json]")
+	}
+
+	client, err := a.client(configPath, 30*time.Second)
+	if err != nil {
+		return err
+	}
+	issue, err := client.GetIssue(context.Background(), fs.Arg(0), *fields)
+	if err != nil {
+		return err
+	}
+	if *rawJSON {
+		return writeJSON(a.Stdout, issue)
+	}
+	printIssue(a.Stdout, issue)
+	return nil
+}
+
+func (a App) runCreate(args []string, configPath string) error {
+	fs := newFlagSet("create")
+	project := fs.String("project", "", "project key")
+	issueType := fs.String("type", "Task", "issue type")
+	summary := fs.String("summary", "", "issue summary")
+	description := fs.String("description", "", "issue description")
+	descriptionFile := fs.String("description-file", "", "path to description file")
+	rawJSON := fs.Bool("json", false, "print JSON response")
+
+	if err := fs.Parse(args); err != nil {
+		return errors.New("usage: jiractrl create --project KEY --type Task --summary '...' [--description '...']")
+	}
+	if strings.TrimSpace(*project) == "" || strings.TrimSpace(*summary) == "" {
+		return errors.New("missing required --project or --summary")
+	}
+	body, err := readInlineOrFile(*description, *descriptionFile)
+	if err != nil {
+		return err
+	}
+	client, err := a.client(configPath, 30*time.Second)
+	if err != nil {
+		return err
+	}
+	created, err := client.CreateIssue(context.Background(), *project, *issueType, *summary, body)
+	if err != nil {
+		return err
+	}
+	if *rawJSON {
+		return writeJSON(a.Stdout, created)
+	}
+	fmt.Fprintf(a.Stdout, "Created %s\n", created.Key)
+	return nil
+}
+
+func (a App) runUpdate(args []string, configPath string) error {
+	fs := newFlagSet("update")
+	summary := fs.String("summary", "", "new summary")
+	description := fs.String("description", "", "new description")
+	descriptionFile := fs.String("description-file", "", "path to description file")
+	fieldValues := multiFlag{}
+	fs.Var(&fieldValues, "field", "field assignment as name=value; may be repeated")
+
+	if err := fs.Parse(args); err != nil {
+		return errors.New("usage: jiractrl update ISSUE-123 [--summary '...'] [--description '...'] [--field name=value]")
+	}
+	if fs.NArg() != 1 || strings.TrimSpace(fs.Arg(0)) == "" {
+		return errors.New("usage: jiractrl update ISSUE-123 [--summary '...'] [--description '...'] [--field name=value]")
+	}
+
+	fields := map[string]any{}
+	if strings.TrimSpace(*summary) != "" {
+		fields["summary"] = *summary
+	}
+	if strings.TrimSpace(*description) != "" || strings.TrimSpace(*descriptionFile) != "" {
+		body, err := readInlineOrFile(*description, *descriptionFile)
+		if err != nil {
+			return err
+		}
+		fields["description"] = body
+	}
+	for _, value := range fieldValues {
+		name, raw, ok := strings.Cut(value, "=")
+		if !ok || strings.TrimSpace(name) == "" {
+			return fmt.Errorf("invalid --field %q; use name=value", value)
+		}
+		fields[strings.TrimSpace(name)] = strings.TrimSpace(raw)
+	}
+	if len(fields) == 0 {
+		return errors.New("no updates requested")
+	}
+
+	client, err := a.client(configPath, 30*time.Second)
+	if err != nil {
+		return err
+	}
+	if err := client.UpdateIssue(context.Background(), fs.Arg(0), fields); err != nil {
+		return err
+	}
+	fmt.Fprintf(a.Stdout, "Updated %s\n", fs.Arg(0))
+	return nil
+}
+
+func (a App) runComment(args []string, configPath string) error {
+	fs := newFlagSet("comment")
+	body := fs.String("body", "", "comment body")
+	bodyFile := fs.String("body-file", "", "path to comment body file")
+	rawJSON := fs.Bool("json", false, "print JSON response")
+
+	if err := fs.Parse(args); err != nil {
+		return errors.New("usage: jiractrl comment ISSUE-123 --body '...'")
+	}
+	if fs.NArg() != 1 || strings.TrimSpace(fs.Arg(0)) == "" {
+		return errors.New("usage: jiractrl comment ISSUE-123 --body '...'")
+	}
+	comment, err := readInlineOrFile(*body, *bodyFile)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(comment) == "" {
+		return errors.New("missing required --body or --body-file")
+	}
+
+	client, err := a.client(configPath, 30*time.Second)
+	if err != nil {
+		return err
+	}
+	result, err := client.AddComment(context.Background(), fs.Arg(0), comment)
+	if err != nil {
+		return err
+	}
+	if *rawJSON {
+		return writeJSON(a.Stdout, result)
+	}
+	fmt.Fprintf(a.Stdout, "Commented on %s\n", fs.Arg(0))
+	return nil
+}
+
+func (a App) runTransitions(args []string, configPath string) error {
+	fs := newFlagSet("transitions")
+	rawJSON := fs.Bool("json", false, "print JSON response")
+	if err := fs.Parse(args); err != nil {
+		return errors.New("usage: jiractrl transitions ISSUE-123 [--json]")
+	}
+	if fs.NArg() != 1 || strings.TrimSpace(fs.Arg(0)) == "" {
+		return errors.New("usage: jiractrl transitions ISSUE-123 [--json]")
+	}
+
+	client, err := a.client(configPath, 30*time.Second)
+	if err != nil {
+		return err
+	}
+	result, err := client.Transitions(context.Background(), fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	if *rawJSON {
+		return writeJSON(a.Stdout, result)
+	}
+	for _, transition := range result.Transitions {
+		fmt.Fprintf(a.Stdout, "%s  %s\n", transition.ID, transition.Name)
+	}
+	return nil
+}
+
+func (a App) runTransition(args []string, configPath string) error {
+	fs := newFlagSet("transition")
+	to := fs.String("to", "", "transition name or id")
+	if err := fs.Parse(args); err != nil {
+		return errors.New("usage: jiractrl transition ISSUE-123 --to 'In Progress'")
+	}
+	if fs.NArg() != 1 || strings.TrimSpace(fs.Arg(0)) == "" || strings.TrimSpace(*to) == "" {
+		return errors.New("usage: jiractrl transition ISSUE-123 --to 'In Progress'")
+	}
+
+	client, err := a.client(configPath, 30*time.Second)
+	if err != nil {
+		return err
+	}
+	transitions, err := client.Transitions(context.Background(), fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	id := ""
+	for _, transition := range transitions.Transitions {
+		if strings.EqualFold(transition.ID, *to) || strings.EqualFold(transition.Name, *to) {
+			id = transition.ID
+			break
+		}
+	}
+	if id == "" {
+		return fmt.Errorf("transition %q not found", *to)
+	}
+	if err := client.TransitionIssue(context.Background(), fs.Arg(0), id); err != nil {
+		return err
+	}
+	fmt.Fprintf(a.Stdout, "Transitioned %s via %s\n", fs.Arg(0), *to)
+	return nil
+}
+
+func (a App) runFields(args []string, configPath string) error {
+	fs := newFlagSet("fields")
+	rawJSON := fs.Bool("json", false, "print JSON response")
+	if err := fs.Parse(args); err != nil {
+		return errors.New("usage: jiractrl fields [--json]")
+	}
+
+	client, err := a.client(configPath, 30*time.Second)
+	if err != nil {
+		return err
+	}
+	fields, err := client.Fields(context.Background())
+	if err != nil {
+		return err
+	}
+	if *rawJSON {
+		return writeJSON(a.Stdout, fields)
+	}
+	for _, field := range fields {
+		fmt.Fprintf(a.Stdout, "%s  %s\n", field.ID, field.Name)
+	}
+	return nil
+}
+
+func (a App) runIssueFields(args []string, configPath string) error {
+	fs := newFlagSet("issue-fields")
+	rawJSON := fs.Bool("json", false, "print JSON response")
+	if err := fs.Parse(args); err != nil {
+		return errors.New("usage: jiractrl issue-fields ISSUE-123 [--json]")
+	}
+	if fs.NArg() != 1 || strings.TrimSpace(fs.Arg(0)) == "" {
+		return errors.New("usage: jiractrl issue-fields ISSUE-123 [--json]")
+	}
+
+	client, err := a.client(configPath, 30*time.Second)
+	if err != nil {
+		return err
+	}
+	issue, err := client.GetIssueRaw(context.Background(), fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	if *rawJSON {
+		return writeJSON(a.Stdout, issue.Fields)
+	}
+	for name, value := range issue.Fields {
+		if value != nil {
+			fmt.Fprintf(a.Stdout, "%s\n", name)
+		}
+	}
+	return nil
+}
+
+func (a App) runProfiles(args []string, configPath string) error {
+	if len(args) == 0 {
+		return errors.New("usage: jiractrl profiles list|show NAME")
+	}
+	cfg, err := config.Load(configPath, 5*time.Second)
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "list":
+		names := make([]string, 0, len(cfg.Profiles))
+		for name := range cfg.Profiles {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			fmt.Fprintln(a.Stdout, name)
+		}
+		return nil
+	case "show":
+		if len(args) != 2 {
+			return errors.New("usage: jiractrl profiles show NAME")
+		}
+		p, ok := cfg.Profiles[args[1]]
+		if !ok {
+			return fmt.Errorf("unknown profile %q", args[1])
+		}
+		fmt.Fprintf(a.Stdout, "%s\n", args[1])
+		fmt.Fprintf(a.Stdout, "  jql: %s\n", p.JQL)
+		if len(p.Fields) > 0 {
+			fmt.Fprintf(a.Stdout, "  fields: %s\n", strings.Join(p.Fields, ", "))
+		}
+		if p.MaxResults > 0 {
+			fmt.Fprintf(a.Stdout, "  max_results: %d\n", p.MaxResults)
+		}
+		return nil
+	default:
+		return errors.New("usage: jiractrl profiles list|show NAME")
+	}
+}
+
+func (a App) runTriage(args []string, configPath string) error {
+	fs := newFlagSet("triage")
+	jql := fs.String("jql", "", "JQL query to triage")
+	maxResults := fs.Int("max", 10, "maximum number of issues to triage")
+	dryRun := fs.Bool("dry-run", true, "print proposed triage without updating Jira")
+	rawJSON := fs.Bool("json", false, "print JSON triage report")
+
+	if err := fs.Parse(args); err != nil {
+		return errors.New("usage: jiractrl triage --jql '<query>' [--max 10] [--dry-run] [--json]")
+	}
+	if strings.TrimSpace(*jql) == "" {
+		return errors.New("missing required --jql")
+	}
+	if *maxResults < 1 || *maxResults > 100 {
+		return errors.New("--max must be between 1 and 100")
+	}
+	if !*dryRun {
+		return errors.New("only dry-run triage is implemented; omit --dry-run or set --dry-run=true")
+	}
+
+	client, err := a.client(configPath, 30*time.Second)
+	if err != nil {
+		return err
+	}
+	result, err := client.Search(context.Background(), *jql, triage.Fields, *maxResults)
+	if err != nil {
+		return err
+	}
+
+	report := make([]triage.Result, 0, len(result.Issues))
+	for _, issue := range result.Issues {
+		report = append(report, triage.Classify(issue))
+	}
+	if *rawJSON {
+		return writeJSON(a.Stdout, report)
+	}
+	printTriageReport(a.Stdout, report)
+	return nil
+}
+
+func (a App) client(configPath string, timeout time.Duration) (*jira.Client, error) {
+	cfg, err := config.Load(configPath, timeout)
+	if err != nil {
+		return nil, err
+	}
+	return jira.NewClient(cfg.BaseURL, cfg.Token, cfg.Timeout), nil
+}
+
+func newFlagSet(name string) *flag.FlagSet {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	return fs
+}
+
+func writeJSON(w io.Writer, value any) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(value)
+}
+
+func readInlineOrFile(inline, path string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return inline, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(inline) != "" {
+		return "", errors.New("use either inline text or file input, not both")
+	}
+	return string(data), nil
+}
+
+type multiFlag []string
+
+func (m *multiFlag) String() string {
+	return strings.Join(*m, ",")
+}
+
+func (m *multiFlag) Set(value string) error {
+	*m = append(*m, value)
+	return nil
+}

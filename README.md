@@ -76,6 +76,13 @@ export JIRACTRL_TOKEN="your-personal-access-token"
 
 ## Commands
 
+For the full help menu:
+
+```sh
+jiractrl help
+jiractrl help search
+```
+
 Check auth:
 
 ```sh
@@ -158,3 +165,21 @@ jiractrl profiles show project_recent
 
 - `SPEC.md` defines the product direction.
 - `TASKS.md` tracks implementation and release work.
+- `AGENTS.md` gives operating guidance for AI agents.
+- `docs/agent-guide.md` has practical recipes for using the CLI safely.
+
+## Development
+
+The code is organized into small internal packages:
+
+- `internal/cli`: command parsing, help, and output
+- `internal/config`: config file, environment overrides, and profiles
+- `internal/jira`: Jira REST client and response types
+- `internal/triage`: read-only issue quality heuristics
+
+Run:
+
+```sh
+go test ./...
+go build -o jiractrl .
+```

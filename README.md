@@ -12,19 +12,31 @@ It aims to be:
 
 ## Install
 
-From source:
+Install the latest release on macOS or Linux. The installer verifies the archive's SHA-256 checksum before installing it:
+
+```sh
+curl -fsSL https://github.com/owainlewis/jiractrl/releases/latest/download/install.sh | sh
+```
+
+By default, this installs `jiractrl` to `$HOME/.local/bin`. Add that directory to your `PATH` if needed. Set `JIRACTRL_INSTALL_DIR` to use another directory:
+
+```sh
+curl -fsSL https://github.com/owainlewis/jiractrl/releases/latest/download/install.sh | JIRACTRL_INSTALL_DIR="$HOME/.local/bin" sh
+```
+
+Install a specific version by setting `JIRACTRL_VERSION`, including the leading `v`:
+
+```sh
+curl -fsSL https://github.com/owainlewis/jiractrl/releases/download/v0.1.0/install.sh | JIRACTRL_VERSION=v0.1.0 sh
+```
+
+Build from source:
 
 ```sh
 go build -o jiractrl .
 ```
 
-Planned one-line install after the GitHub repository is published:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/owainlewis/jiractrl/main/install.sh | sh
-```
-
-Planned Go install:
+Go install:
 
 ```sh
 go install github.com/owainlewis/jiractrl@latest

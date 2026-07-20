@@ -11,40 +11,28 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-          - goos: linux
-            goarch: arm64
-          - goos: darwin
-            goarch: amd64
-          - goos: darwin
-            goarch: arm64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Build
+      - name: Build release assets
         env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
         run: |
           mkdir -p dist
-          go build -trimpath -ldflags="-s -w" -o dist/jiractrl .
-          tar -C dist -czf "jiractrl_${GOOS}_${GOARCH}.tar.gz" jiractrl
-          shasum -a 256 "jiractrl_${GOOS}_${GOARCH}.tar.gz" > "jiractrl_${GOOS}_${GOARCH}.tar.gz.sha256"
-      - name: Upload Release Assets
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            export GOOS="${target%/*}"
+            export GOARCH="${target#*/}"
+            archive="jiractrl_${GOOS}_${GOARCH}.tar.gz"
+            go build -trimpath -ldflags="-s -w" -o dist/jiractrl .
+            tar -C dist -czf "$archive" jiractrl
+            sha256sum "$archive" > "$archive.sha256"
+          done
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            jiractrl_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz
-            jiractrl_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz.sha256
-      - name: Upload Installer
-        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: install.sh
+            jiractrl_*.tar.gz
+            jiractrl_*.tar.gz.sha256
+            install.sh

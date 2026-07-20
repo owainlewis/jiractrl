@@ -43,3 +43,8 @@ jobs:
           files: |
             jiractrl_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz
             jiractrl_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz.sha256
+      - name: Upload Installer
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: install.sh

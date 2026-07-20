@@ -19,5 +19,7 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test ./...
+      - name: Test installer
+        run: sh tests/install_test.sh
       - name: Build
         run: go build -o jiractrl .

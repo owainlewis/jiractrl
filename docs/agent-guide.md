@@ -52,6 +52,10 @@ jiractrl fields --json
 jiractrl issue-fields MYPROJ-123 --json
 jiractrl transitions MYPROJ-123 --json
 jiractrl comments list MYPROJ-123 --all --limit 500 --json
+jiractrl links types --json
+jiractrl links list MYPROJ-123 --json
+jiractrl attachments list MYPROJ-123 --json
+jiractrl changelog MYPROJ-123 --all --limit 500 --json
 jiractrl triage --jql 'project = MYPROJ AND statusCategory != Done' --json
 ```
 
@@ -203,6 +207,48 @@ Updating and removing comments are distinct writes:
 ```sh
 jiractrl comments update MYPROJ-123 10042 --body-file corrected.md
 jiractrl comments remove MYPROJ-123 10042
+```
+
+### Inspect relationships and history
+
+Discover link types before adding a relationship:
+
+```sh
+jiractrl links types --json
+jiractrl links list MYPROJ-123 --json
+jiractrl links add --type Blocks \
+  --outward MYPROJ-123 --inward MYPROJ-456 --json
+```
+
+List output and JSON state `inward` or `outward` explicitly. Jira accepts a
+duplicate link request as successful and returns no created link ID. Treat the
+add receipt as acceptance, then list links when an exact ID is required.
+
+Use the dedicated changelog endpoint instead of a partial issue expansion:
+
+```sh
+jiractrl changelog MYPROJ-123 --all --limit 500 --json
+jiractrl changelog MYPROJ-123 --field status,assignee --json
+```
+
+The limit bounds raw histories scanned even when field filtering removes
+entries.
+
+### Exchange attachments safely
+
+```sh
+jiractrl attachments list MYPROJ-123 --json
+jiractrl attachments upload MYPROJ-123 --file ./evidence.txt --json
+jiractrl attachments download 10001 --output ./downloads/evidence.txt
+```
+
+Downloads require an explicit non-traversing path and do not overwrite by
+default. Use `--overwrite` only with explicit intent. Uploads accept one
+regular file and stream it. Remove by attachment ID only when explicitly
+requested:
+
+```sh
+jiractrl attachments remove 10001
 ```
 
 ### Move an issue through workflow

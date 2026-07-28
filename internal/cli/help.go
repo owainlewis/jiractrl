@@ -30,6 +30,10 @@ Read:
   meta edit ISSUE            Inspect editable fields
   users assignable           Find valid assignees
   comments list ISSUE        Page through all issue comments
+  links types                Discover issue link types and directions
+  links list ISSUE           List normalized inward/outward links
+  attachments list ISSUE     List issue attachments
+  changelog ISSUE            Page and filter issue history
   triage --jql JQL           Dry-run issue quality triage
 
 Write:
@@ -39,6 +43,11 @@ Write:
   comments update ISSUE ID (--body TEXT | --input FILE|-)
   comments remove ISSUE ID
   comment ISSUE --body TEXT  Alias for comments add
+  links add --type NAME --outward ISSUE --inward ISSUE
+  links remove LINK_ID
+  attachments upload ISSUE --file PATH
+  attachments download ID --output PATH
+  attachments remove ID
   transition ISSUE (--to NAME_OR_ID | --input FILE|-)
 
 Global flags:
@@ -147,6 +156,36 @@ are converted to ADF. Data Center bodies remain strings. Structured input
 accepts body plus optional visibility; use it to supply exact Cloud ADF.
 Comment listing is independently paged. --all follows pages only up to --limit.
 The legacy comment command is an alias for comments add.
+`)
+	case "links":
+		fmt.Fprint(w, `Usage:
+  jiractrl links types [--json]
+  jiractrl links list ISSUE [--json]
+  jiractrl links add --type NAME --outward ISSUE --inward ISSUE [--json]
+  jiractrl links remove LINK_ID [--json]
+
+List output names inward or outward direction explicitly. Discover exact type
+names and labels before adding. Jira returns success for duplicate links and
+does not return the new link ID; add receipts expose those semantics.
+`)
+	case "attachments":
+		fmt.Fprint(w, `Usage:
+  jiractrl attachments list ISSUE [--json]
+  jiractrl attachments upload ISSUE --file PATH [--json]
+  jiractrl attachments download ATTACHMENT_ID --output PATH [--overwrite] [--json]
+  jiractrl attachments remove ATTACHMENT_ID [--json]
+
+Uploads stream one regular file as Jira multipart field "file". Downloads
+require an explicit destination, reject parent traversal, and refuse an
+existing destination unless --overwrite is set. Remove is a one-shot write.
+`)
+	case "changelog":
+		fmt.Fprint(w, `Usage:
+  jiractrl changelog ISSUE [--field FIELD] [--start N] [--max 50] [--all --limit 1000] [--json]
+
+Reads the dedicated paged changelog. Repeat --field or use comma-separated
+field names or IDs to retain matching items. --all scans at most --limit raw
+histories even when filtering removes entries.
 `)
 	case "transitions":
 		fmt.Fprint(w, `Usage:

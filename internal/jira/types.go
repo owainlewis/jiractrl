@@ -106,10 +106,23 @@ type CommentBlock struct {
 }
 
 type Comment struct {
-	Author  User     `json:"author"`
-	Body    RichText `json:"body"`
-	Created string   `json:"created"`
-	Updated string   `json:"updated"`
+	ID         string             `json:"id"`
+	Author     User               `json:"author"`
+	Body       RichText           `json:"body"`
+	Visibility *CommentVisibility `json:"visibility,omitempty"`
+	Created    string             `json:"created"`
+	Updated    string             `json:"updated"`
+}
+
+type CommentVisibility struct {
+	Type       string `json:"type"`
+	Value      string `json:"value"`
+	Identifier string `json:"identifier,omitempty"`
+}
+
+type CommentPage struct {
+	Comments []Comment     `json:"comments"`
+	Page     DiscoveryPage `json:"page"`
 }
 
 type RichText struct {

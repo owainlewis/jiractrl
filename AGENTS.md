@@ -10,8 +10,8 @@ Prefer JSON output for agent workflows.
 
 ## Safety Rules
 
-- Treat read commands as safe: `auth check`, `search`, `get`, `fields`, `issue-fields`, `transitions`, `profiles`, `projects`, `meta`, `users`, `triage`.
-- Treat write commands as mutating Jira: `create`, `update`, `comment`, `transition`.
+- Treat read commands as safe: `auth check`, `search`, `get`, `fields`, `issue-fields`, `transitions`, `profiles`, `projects`, `meta`, `users`, `comments list`, `triage`.
+- Treat write commands as mutating Jira: `create`, `update`, `comments add`, `comments update`, `comments remove`, `comment`, `transition`.
 - Before writing custom fields, run `jiractrl fields --json` and, when possible, `jiractrl issue-fields ISSUE --json`.
 - Do not guess custom field IDs.
 - Do not store tokens in prompts, logs, commits, or generated docs.
@@ -50,7 +50,7 @@ Prefer JSON output for agent workflows.
 5. Write only with explicit user intent:
 
    ```sh
-   jiractrl comment ISSUE-123 --body "..."
+   jiractrl comments add ISSUE-123 --body "..."
    jiractrl update ISSUE-123 --field customfield_12345=value
    jiractrl transition ISSUE-123 --to "In Progress"
    ```

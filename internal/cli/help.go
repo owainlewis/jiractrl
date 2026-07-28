@@ -55,6 +55,7 @@ Write:
   worklogs update ISSUE ID [flags]
   watchers add|remove ISSUE --self|--account-id|--user
   transition ISSUE (--to NAME_OR_ID | --input FILE|-)
+  bulk create|update|transition --input FILE|-
 
 Global flags:
   --config PATH              Use a specific config.toml
@@ -245,6 +246,26 @@ Structured input accepts transition, fields, update, properties, and
 historyMetadata. transition.id must be a string. --to may be combined with
 input that omits transition, but conflicts with input that already sets it.
 --dry-run does not send the transition.
+`)
+	case "bulk":
+		fmt.Fprint(w, `Usage:
+  jiractrl bulk create --input creates.jsonl [--max-items 50] [--dry-run] [--json]
+  jiractrl bulk update --input updates.json [--max-items 50] [--dry-run] [--json]
+  jiractrl bulk transition --input transitions.jsonl [--max-items 50] [--dry-run] [--json]
+
+Input is a JSON array or JSONL. Create items contain a normal create envelope.
+Update and transition items also require "issue". Every item may include an
+"identity" copied to its result; otherwise identities are item-0, item-1, and
+so on. All items are validated before any mutation.
+
+Items run sequentially in input order using Jira's single-issue endpoints.
+Ordinary Jira 4xx failures do not stop later items. Transport failures, rate
+limits, timeout responses, and Jira 5xx responses stop the batch because the
+last mutation may have completed. Unattempted items are reported as skipped.
+Partial completion returns exit 1. With --json, the command returns an
+ok=false envelope plus every exact item result. Text output includes each item
+status and failure detail. --max-items defaults to 50 and cannot exceed 1000.
+--dry-run plans the whole batch without mutation.
 `)
 	case "fields":
 		fmt.Fprint(w, `Usage:

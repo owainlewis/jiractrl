@@ -125,6 +125,37 @@ jiractrl comments add MYPROJ-123 --body "Follow-up context."
 jiractrl transition MYPROJ-123 --to "In Progress"
 ```
 
+### Run bounded bulk writes
+
+Use a JSON array or JSONL file for create, update, or transition batches:
+
+```sh
+jiractrl bulk create --input creates.jsonl --dry-run
+jiractrl bulk update --input updates.json --json
+jiractrl bulk transition --input transitions.jsonl --max-items 100 --json
+```
+
+Create items are normal structured create payloads. Update and transition items
+also require `issue`. Add a stable `identity` to each item so another system
+can reconcile the result:
+
+```json
+{"identity":"source-42","issue":"MYPROJ-123","fields":{"summary":"New summary"}}
+{"identity":"source-43","issue":"MYPROJ-124","fields":{"summary":"Next summary"}}
+```
+
+The full input is parsed and validated before the first write. The default
+limit is 50 items; `--max-items` may be set from 1 through 1000. Oversized
+inputs fail before mutation. `--dry-run` plans all items without mutation.
+
+Execution is sequential and results preserve input order. Ordinary Jira 4xx
+failures are recorded per item and processing continues. A transport failure,
+timeout response, 429, or 5xx stops processing because the attempted write has
+an ambiguous outcome; every later item is marked `skipped`. A partial batch
+exits 1. With `--json`, it returns `ok:false` plus all exact item results on
+stdout. Never retry the full input. Inspect Jira and build a new input
+containing only writes known to be safe.
+
 Assign with the identity form returned by the current deployment:
 
 ```sh

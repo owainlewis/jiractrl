@@ -25,7 +25,7 @@ type App struct {
 
 func Run(args []string, stdout, stderr io.Writer) error {
 	err := (App{Stdin: os.Stdin, Stdout: stdout, Stderr: stderr}).Run(args)
-	if err == nil || !wantsJSON(args) {
+	if err == nil || !wantsJSON(args) || IsReported(err) {
 		return err
 	}
 	if writeErr := writeErrorJSON(stderr, err); writeErr != nil {
@@ -90,6 +90,8 @@ func (a App) Run(args []string) error {
 		return a.runWorklogs(args[1:], configPath)
 	case "watchers":
 		return a.runWatchers(args[1:], configPath)
+	case "bulk":
+		return a.runBulk(args[1:], configPath)
 	case "triage":
 		return a.runTriage(args[1:], configPath)
 	case "help", "-h", "--help":

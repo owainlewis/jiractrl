@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"bytes"
 	"errors"
 	"net/http"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/owainlewis/jiractrl/internal/jira"
@@ -29,5 +32,33 @@ func TestExitCodes(t *testing.T) {
 				t.Fatalf("ExitCode() = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestDryRunSelectsJSONErrorsOnlyForMutationCommands(t *testing.T) {
+	for _, name := range []string{"JIRACTRL_TOKEN", "JIRA_PAT", "JIRA_TOKEN"} {
+		t.Setenv(name, "")
+	}
+	configPath := filepath.Join(t.TempDir(), "missing.toml")
+
+	var mutationStdout, mutationStderr bytes.Buffer
+	err := Run([]string{
+		"--config", configPath,
+		"update", "ENG-1", "--summary", "Dry", "--dry-run",
+	}, &mutationStdout, &mutationStderr)
+	if err == nil || !IsReported(err) || !strings.Contains(mutationStderr.String(), `"ok": false`) {
+		t.Fatalf("mutation error = %v, stderr = %s", err, mutationStderr.String())
+	}
+
+	var triageStdout, triageStderr bytes.Buffer
+	err = Run([]string{
+		"--config", configPath,
+		"triage", "--jql", "project = ENG", "--dry-run",
+	}, &triageStdout, &triageStderr)
+	if err == nil || IsReported(err) {
+		t.Fatalf("triage error = %v", err)
+	}
+	if triageStderr.Len() != 0 {
+		t.Fatalf("triage stderr = %s", triageStderr.String())
 	}
 }

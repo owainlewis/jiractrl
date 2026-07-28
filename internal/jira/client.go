@@ -486,21 +486,45 @@ func (c *Client) CreateIssue(ctx context.Context, project, issueType, summary, d
 		fields["description"] = description
 	}
 
+	return c.CreateIssueWithPayload(ctx, map[string]any{"fields": fields})
+}
+
+func (c *Client) PlanCreateIssue(ctx context.Context, payload map[string]any) (*MutationRequest, error) {
 	path, err := c.PlatformPath(ctx, 2, "/issue")
 	if err != nil {
 		return nil, err
 	}
+	return &MutationRequest{Method: http.MethodPost, Path: path, Body: payload}, nil
+}
+
+func (c *Client) CreateIssueWithPayload(ctx context.Context, payload map[string]any) (*CreatedIssue, error) {
+	request, err := c.PlanCreateIssue(ctx, payload)
+	if err != nil {
+		return nil, err
+	}
 	var result CreatedIssue
-	err = c.do(ctx, http.MethodPost, path, map[string]any{"fields": fields}, &result)
+	err = c.do(ctx, request.Method, request.Path, request.Body, &result)
 	return &result, err
 }
 
 func (c *Client) UpdateIssue(ctx context.Context, key string, fields map[string]any) error {
+	return c.UpdateIssueWithPayload(ctx, key, map[string]any{"fields": fields})
+}
+
+func (c *Client) PlanUpdateIssue(ctx context.Context, key string, payload map[string]any) (*MutationRequest, error) {
 	path, err := c.PlatformPath(ctx, 2, "/issue/"+url.PathEscape(key))
+	if err != nil {
+		return nil, err
+	}
+	return &MutationRequest{Method: http.MethodPut, Path: path, Body: payload}, nil
+}
+
+func (c *Client) UpdateIssueWithPayload(ctx context.Context, key string, payload map[string]any) error {
+	request, err := c.PlanUpdateIssue(ctx, key, payload)
 	if err != nil {
 		return err
 	}
-	return c.do(ctx, http.MethodPut, path, map[string]any{"fields": fields}, nil)
+	return c.do(ctx, request.Method, request.Path, request.Body, nil)
 }
 
 func (c *Client) AddComment(ctx context.Context, key, comment string) (*Comment, error) {
@@ -524,16 +548,27 @@ func (c *Client) Transitions(ctx context.Context, key string) (*TransitionRespon
 }
 
 func (c *Client) TransitionIssue(ctx context.Context, key, transitionID string) error {
-	body := map[string]any{
+	return c.TransitionIssueWithPayload(ctx, key, map[string]any{
 		"transition": map[string]string{
 			"id": transitionID,
 		},
-	}
+	})
+}
+
+func (c *Client) PlanTransitionIssue(ctx context.Context, key string, payload map[string]any) (*MutationRequest, error) {
 	path, err := c.PlatformPath(ctx, 2, "/issue/"+url.PathEscape(key)+"/transitions")
+	if err != nil {
+		return nil, err
+	}
+	return &MutationRequest{Method: http.MethodPost, Path: path, Body: payload}, nil
+}
+
+func (c *Client) TransitionIssueWithPayload(ctx context.Context, key string, payload map[string]any) error {
+	request, err := c.PlanTransitionIssue(ctx, key, payload)
 	if err != nil {
 		return err
 	}
-	return c.do(ctx, http.MethodPost, path, body, nil)
+	return c.do(ctx, request.Method, request.Path, request.Body, nil)
 }
 
 func (c *Client) Fields(ctx context.Context) ([]Field, error) {

@@ -58,6 +58,8 @@ func (a App) Run(args []string) error {
 		return a.runCreate(args[1:], configPath)
 	case "update":
 		return a.runUpdate(args[1:], configPath)
+	case "assign":
+		return a.runAssign(args[1:], configPath)
 	case "comment":
 		return a.runComment(args[1:], configPath)
 	case "comments":
@@ -346,6 +348,7 @@ func (a App) runCreate(args []string, configPath string) error {
 	summary := fs.String("summary", "", "issue summary")
 	description := fs.String("description", "", "issue description")
 	descriptionFile := fs.String("description-file", "", "path to description file")
+	parent := fs.String("parent", "", "parent issue key for a subtask")
 	inputPath := fs.String("input", "", "structured JSON input file, or - for stdin")
 	dryRun := fs.Bool("dry-run", false, "print the exact Jira request without sending it")
 	jsonOutput := fs.Bool("json", false, "print JSON response")
@@ -359,7 +362,7 @@ func (a App) runCreate(args []string, configPath string) error {
 
 	var payload map[string]any
 	if strings.TrimSpace(*inputPath) != "" {
-		if flagWasSet(fs, "project", "type", "summary", "description", "description-file") {
+		if flagWasSet(fs, "project", "type", "summary", "description", "description-file", "parent") {
 			return errors.New("--input conflicts with create convenience flags")
 		}
 		var err error
@@ -386,12 +389,26 @@ func (a App) runCreate(args []string, configPath string) error {
 		if strings.TrimSpace(body) != "" {
 			fields["description"] = body
 		}
+		if strings.TrimSpace(*parent) != "" {
+			fields["parent"] = map[string]string{"key": strings.TrimSpace(*parent)}
+		}
 		payload = map[string]any{"fields": fields}
 	}
 
 	client, err := a.client(configPath, 30*time.Second)
 	if err != nil {
 		return err
+	}
+	if strings.TrimSpace(*parent) != "" {
+		resolvedType, err := client.ResolveProjectIssueType(context.Background(), *project, *issueType)
+		if err != nil {
+			return fmt.Errorf("validate subtask issue type: %w", err)
+		}
+		if !resolvedType.Subtask {
+			return &jira.ValidationError{Field: "type", Message: "--parent requires a subtask issue type"}
+		}
+		fields := payload["fields"].(map[string]any)
+		fields["issuetype"] = map[string]string{"id": resolvedType.ID}
 	}
 	if *dryRun {
 		request, err := client.PlanCreateIssue(context.Background(), payload)
@@ -416,6 +433,7 @@ func (a App) runUpdate(args []string, configPath string) error {
 	summary := fs.String("summary", "", "new summary")
 	description := fs.String("description", "", "new description")
 	descriptionFile := fs.String("description-file", "", "path to description file")
+	parent := fs.String("parent", "", "new parent issue key on Jira Cloud")
 	fieldValues := multiFlag{}
 	inputPath := fs.String("input", "", "structured JSON input file, or - for stdin")
 	dryRun := fs.Bool("dry-run", false, "print the exact Jira request without sending it")
@@ -431,7 +449,7 @@ func (a App) runUpdate(args []string, configPath string) error {
 
 	var payload map[string]any
 	if strings.TrimSpace(*inputPath) != "" {
-		if flagWasSet(fs, "summary", "description", "description-file", "field") {
+		if flagWasSet(fs, "summary", "description", "description-file", "field", "parent") {
 			return errors.New("--input conflicts with update convenience flags")
 		}
 		var err error
@@ -454,6 +472,9 @@ func (a App) runUpdate(args []string, configPath string) error {
 			}
 			fields["description"] = body
 		}
+		if strings.TrimSpace(*parent) != "" {
+			fields["parent"] = map[string]string{"key": strings.TrimSpace(*parent)}
+		}
 		for _, value := range fieldValues {
 			name, raw, ok := strings.Cut(value, "=")
 			if !ok || strings.TrimSpace(name) == "" {
@@ -470,6 +491,11 @@ func (a App) runUpdate(args []string, configPath string) error {
 	client, err := a.client(configPath, 30*time.Second)
 	if err != nil {
 		return err
+	}
+	if strings.TrimSpace(*parent) != "" {
+		if err := client.ValidateParentUpdate(context.Background()); err != nil {
+			return err
+		}
 	}
 	if *dryRun {
 		request, err := client.PlanUpdateIssue(context.Background(), fs.Arg(0), payload)

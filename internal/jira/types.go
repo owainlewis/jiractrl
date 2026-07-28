@@ -276,6 +276,24 @@ type UserPage struct {
 	Page  DiscoveryPage  `json:"page"`
 }
 
+type AssignmentReceipt struct {
+	Issue      string     `json:"issue"`
+	Deployment Deployment `json:"deployment"`
+	AccountID  string     `json:"accountId,omitempty"`
+	User       string     `json:"user,omitempty"`
+	Unassigned bool       `json:"unassigned"`
+	Assigned   bool       `json:"assigned"`
+}
+
+type AmbiguousUserError struct {
+	Value      string
+	Candidates []UserIdentity
+}
+
+func (e *AmbiguousUserError) Error() string {
+	return fmt.Sprintf("user %q is ambiguous; use --account-id on Cloud or an exact username on Data Center", e.Value)
+}
+
 type IssueLinkType struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`

@@ -39,6 +39,7 @@ Read:
 Write:
   create (--project KEY --summary TEXT | --input FILE|-)
   update ISSUE [--summary TEXT | --input FILE|-]
+  assign ISSUE (--account-id ID | --user USER | --unassign)
   comments add ISSUE (--body TEXT | --input FILE|-)
   comments update ISSUE ID (--body TEXT | --input FILE|-)
   comments remove ISSUE ID
@@ -118,23 +119,37 @@ exact Jira response.
 `)
 	case "create":
 		fmt.Fprint(w, `Usage:
-  jiractrl create --project MYPROJ --type Task --summary 'Summary' [--description 'Body'] [--description-file body.md] [--dry-run] [--json]
+  jiractrl create --project MYPROJ --type Task --summary 'Summary' [--description 'Body'] [--description-file body.md] [--parent ISSUE] [--dry-run] [--json]
   jiractrl create --input issue.json [--dry-run] [--json]
   jiractrl create --input - [--dry-run] [--json]
 
 Creates a Jira issue. Structured input accepts fields, update, transition,
 properties, and historyMetadata. Do not combine --input with convenience flags.
+--parent requires a discovered subtask issue type and sends parent.key.
 --dry-run prints the resolved request and does not send the mutation.
 `)
 	case "update":
 		fmt.Fprint(w, `Usage:
-  jiractrl update ISSUE-123 [--summary 'New summary'] [--description 'Body'] [--description-file body.md] [--field customfield_12345=value] [--dry-run] [--json]
+  jiractrl update ISSUE-123 [--summary 'New summary'] [--description 'Body'] [--description-file body.md] [--parent ISSUE] [--field customfield_12345=value] [--dry-run] [--json]
   jiractrl update ISSUE-123 --input update.json [--dry-run] [--json]
   jiractrl update ISSUE-123 --input - [--dry-run] [--json]
 
 Updates issue fields. Repeat --field for multiple raw field assignments.
 Structured input accepts fields, update, properties, and historyMetadata.
 Do not combine --input with convenience flags. --dry-run does not mutate Jira.
+The high-level --parent update is supported on Jira Cloud. Data Center returns
+an unsupported capability error before sending any mutation.
+`)
+	case "assign":
+		fmt.Fprint(w, `Usage:
+  jiractrl assign ISSUE --account-id ACCOUNT_ID [--json]
+  jiractrl assign ISSUE --user EXACT_USER [--json]
+  jiractrl assign ISSUE --unassign [--json]
+
+Cloud uses accountId and Data Center uses username. Both forms are validated
+against assignable users before mutation. On Cloud, --user resolves an exact
+display name or email; ambiguous matches return candidates. On Data Center,
+--user resolves an exact username only. Prefer --account-id on Cloud.
 `)
 	case "comment":
 		fmt.Fprint(w, `Usage:

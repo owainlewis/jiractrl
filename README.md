@@ -272,6 +272,43 @@ Update an issue:
 jiractrl update MYPROJ-123 --summary "Updated summary"
 ```
 
+Assign with a deployment-native identity or unassign:
+
+```sh
+# Jira Cloud
+jiractrl assign MYPROJ-123 --account-id 5b10ac8d82e05b22cc7d4ef5 --json
+
+# Data Center exact username
+jiractrl assign MYPROJ-123 --user fred --json
+
+jiractrl assign MYPROJ-123 --unassign --json
+```
+
+Both forms are checked against Jira's assignable-user data before mutation.
+On Cloud, `--user` resolves one exact display name or email and returns
+candidates instead of choosing an ambiguous match. On Data Center, it resolves
+an exact username only. Prefer `--account-id` on Cloud once discovery has
+supplied it.
+
+Create a subtask with a validated subtask issue type:
+
+```sh
+jiractrl create --project MYPROJ --type Sub-task \
+  --summary "Verify the fix" --parent MYPROJ-123 --json
+```
+
+The parent is sent as `{"key":"MYPROJ-123"}` and the issue type is sent by its
+discovered ID. Structured input can instead supply Jira's exact `parent` and
+`issuetype` objects. High-level reparenting is available on Cloud:
+
+```sh
+jiractrl update MYPROJ-456 --parent MYPROJ-123 --json
+```
+
+Data Center high-level reparenting fails with `unsupported` before mutation.
+Structured input remains available for deployment-specific fields when the
+site's edit metadata explicitly exposes them.
+
 List comments independently of the partial comment field returned by issue
 reads:
 

@@ -116,6 +116,12 @@ func classifyError(err error) contractError {
 		result.Candidates = ambiguous.Candidates
 		return result
 	}
+	var ambiguousUser *jira.AmbiguousUserError
+	if errors.As(err, &ambiguousUser) {
+		result.Kind = "ambiguous"
+		result.Candidates = ambiguousUser.Candidates
+		return result
+	}
 	var jiraErr *jira.Error
 	if !errors.As(err, &jiraErr) {
 		var networkErr net.Error

@@ -123,6 +123,38 @@ jiractrl comments add MYPROJ-123 --body "Follow-up context."
 jiractrl transition MYPROJ-123 --to "In Progress"
 ```
 
+Assign with the identity form returned by the current deployment:
+
+```sh
+# Cloud
+jiractrl users assignable --issue MYPROJ-123 --query alex --json
+jiractrl assign MYPROJ-123 --account-id ACCOUNT_ID --json
+
+# Data Center
+jiractrl assign MYPROJ-123 --user exact_username --json
+
+jiractrl assign MYPROJ-123 --unassign --json
+```
+
+Both identity forms are validated before mutation. Cloud `--user` resolves an
+exact display name or email and never chooses among duplicates. Data Center
+`--user` resolves an exact username only. Use the stable Cloud account ID when
+available.
+
+For subtasks, discover the valid subtask type and pass a parent:
+
+```sh
+jiractrl projects issue-types MYPROJ --json
+jiractrl create --project MYPROJ --type SUBTASK_TYPE_ID \
+  --summary "Child work" --parent MYPROJ-123 --json
+```
+
+The convenience command validates that the type is a subtask and sends the
+discovered type ID plus `parent.key`. Structured create input can supply exact
+`issuetype` and `parent` objects. `update ISSUE --parent PARENT` is a Cloud
+high-level operation; Data Center fails before mutation because parent editing
+varies by version and configuration.
+
 For typed custom fields and compound mutations, pass one Jira-compatible JSON
 object through `--input FILE` or `--input -`. Use `--dry-run` first to inspect
 the exact method, path, and body without calling a mutation endpoint:

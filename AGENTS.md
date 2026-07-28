@@ -57,7 +57,9 @@ Prefer JSON output for agent workflows.
 
 ## Output Expectations
 
-- `--json` prints machine-readable output to stdout.
+- `--json` success uses `{"ok":true,"data":...}` on stdout.
+- `--json` failure uses `{"ok":false,"error":...}` on stderr.
+- Rate limits exit 6 and conflicts exit 7. Other exit codes are documented in `README.md`.
 - Human text output is concise and intended for terminals.
 - Errors print through the CLI caller and should be treated as failed operations.
 

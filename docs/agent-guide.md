@@ -44,8 +44,8 @@ Read operations do not mutate Jira.
 ```sh
 jiractrl auth check
 jiractrl server-info --json
-jiractrl profiles list
-jiractrl profiles show my_open
+jiractrl profiles list --json
+jiractrl profiles show my_open --json
 jiractrl search --profile my_open --json
 jiractrl get MYPROJ-123 --json
 jiractrl fields --json
@@ -53,6 +53,18 @@ jiractrl issue-fields MYPROJ-123 --json
 jiractrl transitions MYPROJ-123 --json
 jiractrl triage --jql 'project = MYPROJ AND statusCategory != Done' --json
 ```
+
+All `--json` results use `{"ok":true,"data":...}`. Read errors and write
+errors use `{"ok":false,"error":...}` on stderr. Branch on `error.kind`, not
+message text. Rate limits use `rate_limited` and exit 6. Conflicts use
+`conflict` and exit 7.
+
+Safe reads retry bounded 429 and retryable 5xx responses. Mutations are never
+retried automatically, so an agent should inspect Jira before deciding whether
+to repeat a failed create, update, comment, or transition.
+
+Use `get --raw-json` or single-page `search --raw-json` only when exact Jira
+response fields are required. Raw output is intentionally not wrapped.
 
 Search JSON includes an opaque `page.next` cursor and `page.hasMore`. Pass the
 cursor back without interpreting it:

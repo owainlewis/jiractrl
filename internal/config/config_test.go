@@ -29,6 +29,11 @@ deployment = "data_center"
 max_results = 25
 output = "json"
 
+[retry]
+max_attempts = 4
+base_delay_ms = 25
+max_delay_ms = 250
+
 [profiles.my_open]
 jql = "assignee = currentUser() ORDER BY updated DESC"
 fields = ["summary", "status", "updated"]
@@ -58,6 +63,9 @@ max_results = 10
 	if cfg.DefaultMaxResults != 25 {
 		t.Fatalf("DefaultMaxResults = %d", cfg.DefaultMaxResults)
 	}
+	if cfg.RetryMaxAttempts != 4 || cfg.RetryBaseDelay != 25*time.Millisecond || cfg.RetryMaxDelay != 250*time.Millisecond {
+		t.Fatalf("retry config = %d %s %s", cfg.RetryMaxAttempts, cfg.RetryBaseDelay, cfg.RetryMaxDelay)
+	}
 	p := cfg.Profiles["my_open"]
 	if p.JQL == "" {
 		t.Fatal("profile JQL was empty")
@@ -75,5 +83,41 @@ func TestLoadRejectsInvalidDeploymentOverride(t *testing.T) {
 	t.Setenv("JIRACTRL_DEPLOYMENT", "hosted")
 	if _, err := Load(filepath.Join(t.TempDir(), "missing.toml"), time.Second); err == nil {
 		t.Fatal("expected invalid deployment error")
+	}
+}
+
+func TestLoadAllowsZeroRetryDelaysAndRejectsZeroAttempts(t *testing.T) {
+	t.Setenv("JIRACTRL_TOKEN", "")
+	path := filepath.Join(t.TempDir(), "config.toml")
+	body := `[jira]
+token = "secret"
+
+[retry]
+max_attempts = 2
+base_delay_ms = 0
+max_delay_ms = 0
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RetryBaseDelay != 0 || cfg.RetryMaxDelay != 0 {
+		t.Fatalf("delays = %s %s", cfg.RetryBaseDelay, cfg.RetryMaxDelay)
+	}
+
+	body = `[jira]
+token = "secret"
+
+[retry]
+max_attempts = 0
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path, time.Second); err == nil {
+		t.Fatal("expected zero attempts to be rejected")
 	}
 }

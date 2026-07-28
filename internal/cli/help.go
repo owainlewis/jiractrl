@@ -34,6 +34,8 @@ Read:
   links list ISSUE           List normalized inward/outward links
   attachments list ISSUE     List issue attachments
   changelog ISSUE            Page and filter issue history
+  worklogs list ISSUE        Page through issue worklogs
+  watchers list ISSUE        List visible issue watchers
   triage --jql JQL           Dry-run issue quality triage
 
 Write:
@@ -49,6 +51,9 @@ Write:
   attachments upload ISSUE --file PATH
   attachments download ID --output PATH
   attachments remove ID
+  worklogs add ISSUE --time-spent DURATION
+  worklogs update ISSUE ID [flags]
+  watchers add|remove ISSUE --self|--account-id|--user
   transition ISSUE (--to NAME_OR_ID | --input FILE|-)
 
 Global flags:
@@ -201,6 +206,28 @@ existing destination unless --overwrite is set. Remove is a one-shot write.
 Reads the dedicated paged changelog. Repeat --field or use comma-separated
 field names or IDs to retain matching items. --all scans at most --limit raw
 histories even when filtering removes entries.
+`)
+	case "worklogs":
+		fmt.Fprint(w, `Usage:
+  jiractrl worklogs list ISSUE [--start N] [--max 50] [--all --limit 1000] [--json]
+  jiractrl worklogs add ISSUE --time-spent DURATION [--started RFC3339] [--comment TEXT] [--adjust auto|leave|new|manual] [--new-estimate DURATION|--reduce-by DURATION] [--json]
+  jiractrl worklogs update ISSUE WORKLOG_ID [--time-spent DURATION] [--started RFC3339] [--comment TEXT] [--adjust auto|leave|new] [--new-estimate DURATION] [--json]
+
+Durations use positive Jira units such as 1d 2h 30m. Cloud comments convert
+Markdown to ADF; Data Center comments remain strings. Visibility uses paired
+--visibility-type role|group and --visibility-value flags. Mutations are
+one-shot and are never retried automatically.
+`)
+	case "watchers":
+		fmt.Fprint(w, `Usage:
+  jiractrl watchers list ISSUE [--json]
+  jiractrl watchers add ISSUE (--self | --account-id ID | --user USER) [--json]
+  jiractrl watchers remove ISSUE (--self | --account-id ID | --user USER) [--json]
+
+Cloud uses account IDs and Data Center uses usernames. --self changes the
+calling user's watch state without sending another user's identity. Watcher
+mutations are one-shot. Jira permission and privacy errors keep the structured
+JSON error contract.
 `)
 	case "transitions":
 		fmt.Fprint(w, `Usage:

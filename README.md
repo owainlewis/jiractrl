@@ -444,6 +444,35 @@ jiractrl changelog MYPROJ-123 --field status --field assignee --json
 history records. Field filters match either Jira field names or field IDs and
 retain only matching change items.
 
+Read and manage worklogs:
+
+```sh
+jiractrl worklogs list MYPROJ-123 --all --limit 500 --json
+jiractrl worklogs add MYPROJ-123 --time-spent "1h 30m" \
+  --started 2026-07-28T12:30:00Z --comment "Implemented **validation**" \
+  --adjust new --new-estimate 2d --json
+jiractrl worklogs update MYPROJ-123 10010 --time-spent 2h --json
+```
+
+Durations use positive Jira units `w`, `d`, `h`, and `m`. Estimate flags are
+validated as a set before mutation. Cloud worklog comments convert the same
+Markdown subset as issue comments to ADF; Data Center sends strings. Worklog
+mutations are never retried.
+
+Inspect and change watcher state:
+
+```sh
+jiractrl watchers list MYPROJ-123 --json
+jiractrl watchers add MYPROJ-123 --self
+jiractrl watchers add MYPROJ-123 --account-id ACCOUNT_ID  # Cloud
+jiractrl watchers remove MYPROJ-123 --user fred           # Data Center
+```
+
+Cloud accepts account IDs and Data Center accepts usernames. Adding or
+removing another user may require Jira's Manage watcher list permission.
+Privacy and permission failures use the normal structured JSON error contract.
+Watcher mutations are never retried.
+
 List profiles:
 
 ```sh

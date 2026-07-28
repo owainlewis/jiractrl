@@ -12,12 +12,15 @@ import (
 func printIssues(w io.Writer, result *jira.SearchResponse, withDescription bool) {
 	if len(result.Issues) == 0 {
 		fmt.Fprintln(w, "No issues found.")
+		if result.Page.HasMore && result.Page.Next != "" {
+			fmt.Fprintf(w, "More results available: rerun with --cursor %q\n", result.Page.Next)
+		}
 		return
 	}
 
 	fmt.Fprintf(w, "Found %d issue(s)", len(result.Issues))
-	if result.Total > len(result.Issues) {
-		fmt.Fprintf(w, " of %d total", result.Total)
+	if result.Page.Total != nil && *result.Page.Total > len(result.Issues) {
+		fmt.Fprintf(w, " of %d total", *result.Page.Total)
 	}
 	fmt.Fprintln(w, ":")
 
@@ -37,12 +40,15 @@ func printIssues(w io.Writer, result *jira.SearchResponse, withDescription bool)
 			assignee,
 		)
 		if withDescription {
-			description := strings.TrimSpace(issue.Fields.Description)
+			description := issue.Fields.Description.PlainText()
 			if description == "" {
 				description = "(no description)"
 			}
 			fmt.Fprintf(w, "  description: %s\n", oneLine(description))
 		}
+	}
+	if result.Page.HasMore && result.Page.Next != "" {
+		fmt.Fprintf(w, "\nMore results available: rerun with --cursor %q\n", result.Page.Next)
 	}
 }
 
@@ -63,7 +69,7 @@ func printIssue(w io.Writer, issue *jira.Issue) {
 	}
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Description:")
-	description := strings.TrimSpace(issue.Fields.Description)
+	description := issue.Fields.Description.PlainText()
 	if description == "" {
 		description = "(no description)"
 	}
@@ -76,7 +82,7 @@ func printIssue(w io.Writer, issue *jira.Issue) {
 			if comment.Created != "" {
 				fmt.Fprintf(w, " at %s", comment.Created)
 			}
-			fmt.Fprintf(w, "\n%s\n", strings.TrimSpace(comment.Body))
+			fmt.Fprintf(w, "\n%s\n", comment.Body.PlainText())
 		}
 	}
 }

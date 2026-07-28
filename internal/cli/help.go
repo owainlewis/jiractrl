@@ -70,8 +70,17 @@ Checks the configured Jira base URL and token.
 		fmt.Fprint(w, `Usage:
   jiractrl search --jql 'project = MYPROJ ORDER BY updated DESC' [--max 20] [--fields summary,status] [--json]
   jiractrl search --profile my_open [--json]
+  jiractrl search --profile my_open --all --limit 500 [--json]
+  jiractrl search --jql 'project = MYPROJ' --cursor CURSOR
+  jiractrl search --jql 'key = MYPROJ-123' --reconcile 10001
 
 Use --json for agent workflows. Profiles come from config.toml.
+--max controls the Jira page size. --all follows continuation cursors up to
+the hard --limit, which defaults to 1000 and cannot exceed 10000.
+Pass the opaque page.next value back through --cursor to continue a search.
+Repeat --reconcile with numeric Jira Cloud issue IDs when a search must see
+recent writes. Jira Cloud accepts at most 50 IDs. Reconciliation is not
+available on Data Center.
 `)
 	case "server-info":
 		fmt.Fprint(w, `Usage:

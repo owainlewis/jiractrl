@@ -22,7 +22,7 @@ type Result struct {
 }
 
 func Classify(issue jira.Issue) Result {
-	description := strings.TrimSpace(issue.Fields.Description)
+	description := issue.Fields.Description.PlainText()
 	text := strings.ToLower(issue.Fields.Summary + "\n" + description)
 	missing := missingSignals(issue, text)
 	labels := []string{"ai-triaged"}
@@ -66,7 +66,7 @@ func Classify(issue jira.Issue) Result {
 
 func missingSignals(issue jira.Issue, text string) []string {
 	var missing []string
-	if strings.TrimSpace(issue.Fields.Description) == "" {
+	if issue.Fields.Description.PlainText() == "" {
 		missing = append(missing, "description")
 	}
 	if !containsAny(text, "impact", "customer", "severity", "sev", "blast radius", "affected") {

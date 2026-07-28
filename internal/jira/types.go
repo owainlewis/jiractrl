@@ -1,5 +1,11 @@
 package jira
 
+import (
+	"bytes"
+	"encoding/json"
+	"strings"
+)
+
 type Deployment string
 
 const (
@@ -42,10 +48,25 @@ type User struct {
 }
 
 type SearchResponse struct {
-	StartAt    int     `json:"startAt"`
-	MaxResults int     `json:"maxResults"`
-	Total      int     `json:"total"`
-	Issues     []Issue `json:"issues"`
+	Issues []Issue    `json:"issues"`
+	Page   SearchPage `json:"page"`
+}
+
+type SearchPage struct {
+	Returned int    `json:"returned"`
+	Limit    int    `json:"limit"`
+	Next     string `json:"next,omitempty"`
+	HasMore  bool   `json:"hasMore"`
+	Total    *int   `json:"total,omitempty"`
+	Pages    int    `json:"pages"`
+}
+
+type SearchOptions struct {
+	JQL               string
+	Fields            []string
+	MaxResults        int
+	Cursor            string
+	ReconcileIssueIDs []int64
 }
 
 type Issue struct {
@@ -62,7 +83,7 @@ type RawIssue struct {
 
 type IssueField struct {
 	Summary     string       `json:"summary"`
-	Description string       `json:"description"`
+	Description RichText     `json:"description"`
 	Status      NamedValue   `json:"status"`
 	Priority    NamedValue   `json:"priority"`
 	IssueType   NamedValue   `json:"issuetype"`
@@ -84,10 +105,64 @@ type CommentBlock struct {
 }
 
 type Comment struct {
-	Author  User   `json:"author"`
-	Body    string `json:"body"`
-	Created string `json:"created"`
-	Updated string `json:"updated"`
+	Author  User     `json:"author"`
+	Body    RichText `json:"body"`
+	Created string   `json:"created"`
+	Updated string   `json:"updated"`
+}
+
+type RichText struct {
+	value any
+}
+
+func (r *RichText) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		r.value = nil
+		return nil
+	}
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	r.value = value
+	return nil
+}
+
+func (r RichText) MarshalJSON() ([]byte, error) {
+	return json.Marshal(r.value)
+}
+
+func (r RichText) PlainText() string {
+	return strings.TrimSpace(plainText(r.value))
+}
+
+func plainText(value any) string {
+	switch value := value.(type) {
+	case string:
+		return value
+	case []any:
+		var text strings.Builder
+		for _, item := range value {
+			text.WriteString(plainText(item))
+		}
+		return text.String()
+	case map[string]any:
+		if value["type"] == "hardBreak" {
+			return "\n"
+		}
+		if text, ok := value["text"].(string); ok {
+			return text
+		}
+		text := plainText(value["content"])
+		switch value["type"] {
+		case "paragraph", "heading", "codeBlock", "listItem":
+			return text + "\n"
+		default:
+			return text
+		}
+	default:
+		return ""
+	}
 }
 
 type CreatedIssue struct {

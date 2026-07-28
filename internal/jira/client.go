@@ -52,6 +52,15 @@ func (e *UnsupportedCapabilityError) Error() string {
 	return fmt.Sprintf("Jira capability %q is unavailable for deployment %q", e.Capability, e.Deployment)
 }
 
+type ValidationError struct {
+	Field   string
+	Message string
+}
+
+func (e *ValidationError) Error() string {
+	return fmt.Sprintf("invalid %s: %s", e.Field, e.Message)
+}
+
 func ParseDeployment(value string) (Deployment, error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "", "auto":
@@ -151,19 +160,186 @@ func (c *Client) Myself(ctx context.Context) (*User, error) {
 	return &result, err
 }
 
-func (c *Client) Search(ctx context.Context, jql, fields string, maxResults int) (*SearchResponse, error) {
-	q := url.Values{}
-	q.Set("jql", jql)
-	q.Set("fields", fields)
-	q.Set("maxResults", strconv.Itoa(maxResults))
+func (c *Client) Search(ctx context.Context, options SearchOptions) (*SearchResponse, error) {
+	if strings.TrimSpace(options.JQL) == "" {
+		return nil, errors.New("search JQL must not be empty")
+	}
+	if options.MaxResults < 1 || options.MaxResults > 1000 {
+		return nil, &ValidationError{Field: "maxResults", Message: "must be between 1 and 1000"}
+	}
+	if len(options.ReconcileIssueIDs) > 50 {
+		return nil, &ValidationError{Field: "reconcileIssues", Message: "must contain at most 50 issue IDs"}
+	}
+	for _, issueID := range options.ReconcileIssueIDs {
+		if issueID < 1 {
+			return nil, &ValidationError{Field: "reconcileIssues", Message: "issue IDs must be positive integers"}
+		}
+	}
+
+	deployment, err := c.Deployment(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if deployment == DeploymentCloud {
+		return c.searchCloud(ctx, options)
+	}
+	return c.searchDataCenter(ctx, options)
+}
+
+func (c *Client) SearchAll(ctx context.Context, options SearchOptions, limit int) (*SearchResponse, error) {
+	if limit < 1 {
+		return nil, errors.New("search limit must be 1 or greater")
+	}
+	if options.MaxResults < 1 || options.MaxResults > 1000 {
+		return nil, &ValidationError{Field: "maxResults", Message: "must be between 1 and 1000"}
+	}
+
+	const maxPages = 1000
+	pageSize := options.MaxResults
+	cursor := options.Cursor
+	seen := map[string]bool{}
+	if cursor != "" {
+		seen[cursor] = true
+	}
+	result := &SearchResponse{
+		Issues: make([]Issue, 0, min(pageSize, limit)),
+		Page: SearchPage{
+			Limit: limit,
+		},
+	}
+
+	for result.Page.Pages < maxPages && len(result.Issues) < limit {
+		pageOptions := options
+		pageOptions.Cursor = cursor
+		pageOptions.MaxResults = min(pageSize, limit-len(result.Issues))
+		page, err := c.Search(ctx, pageOptions)
+		if err != nil {
+			return nil, err
+		}
+		if len(page.Issues) > pageOptions.MaxResults {
+			return nil, fmt.Errorf("Jira search returned %d issues for a page size of %d", len(page.Issues), pageOptions.MaxResults)
+		}
+
+		result.Issues = append(result.Issues, page.Issues...)
+		result.Page.Pages++
+		result.Page.Total = page.Page.Total
+		result.Page.Next = page.Page.Next
+		result.Page.HasMore = page.Page.HasMore
+
+		if !page.Page.HasMore || len(result.Issues) >= limit {
+			break
+		}
+		if page.Page.Next == "" {
+			return nil, errors.New("Jira search reported another page without a continuation cursor")
+		}
+		if seen[page.Page.Next] {
+			return nil, fmt.Errorf("Jira search repeated continuation cursor %q", page.Page.Next)
+		}
+		seen[page.Page.Next] = true
+		cursor = page.Page.Next
+	}
+	if result.Page.Pages == maxPages && result.Page.HasMore && len(result.Issues) < limit {
+		return nil, fmt.Errorf("Jira search exceeded the %d-page safety budget", maxPages)
+	}
+	result.Page.Returned = len(result.Issues)
+	return result, nil
+}
+
+func (c *Client) searchCloud(ctx context.Context, options SearchOptions) (*SearchResponse, error) {
+	path, err := c.PlatformPath(ctx, 3, "/search/jql")
+	if err != nil {
+		return nil, err
+	}
+	body := map[string]any{
+		"jql":        options.JQL,
+		"fields":     options.Fields,
+		"maxResults": options.MaxResults,
+	}
+	if options.Cursor != "" {
+		body["nextPageToken"] = options.Cursor
+	}
+	if len(options.ReconcileIssueIDs) > 0 {
+		body["reconcileIssues"] = options.ReconcileIssueIDs
+	}
+
+	var raw struct {
+		Issues        []Issue `json:"issues"`
+		NextPageToken string  `json:"nextPageToken"`
+		IsLast        bool    `json:"isLast"`
+	}
+	if err := c.do(ctx, http.MethodPost, path, body, &raw); err != nil {
+		return nil, err
+	}
+	hasMore := raw.NextPageToken != "" && !raw.IsLast
+	return &SearchResponse{
+		Issues: raw.Issues,
+		Page: SearchPage{
+			Returned: len(raw.Issues),
+			Limit:    options.MaxResults,
+			Next:     raw.NextPageToken,
+			HasMore:  hasMore,
+			Pages:    1,
+		},
+	}, nil
+}
+
+func (c *Client) searchDataCenter(ctx context.Context, options SearchOptions) (*SearchResponse, error) {
+	if len(options.ReconcileIssueIDs) > 0 {
+		return nil, &UnsupportedCapabilityError{
+			Capability: "search reconciliation",
+			Deployment: DeploymentDataCenter,
+		}
+	}
+	startAt := 0
+	if options.Cursor != "" {
+		parsed, err := strconv.Atoi(options.Cursor)
+		if err != nil || parsed < 0 {
+			return nil, &ValidationError{
+				Field:   "cursor",
+				Message: fmt.Sprintf("%q is not a non-negative Data Center offset", options.Cursor),
+			}
+		}
+		startAt = parsed
+	}
 
 	path, err := c.PlatformPath(ctx, 2, "/search")
 	if err != nil {
 		return nil, err
 	}
-	var result SearchResponse
-	err = c.do(ctx, http.MethodGet, path+"?"+q.Encode(), nil, &result)
-	return &result, err
+	body := map[string]any{
+		"jql":        options.JQL,
+		"fields":     options.Fields,
+		"maxResults": options.MaxResults,
+		"startAt":    startAt,
+	}
+	var raw struct {
+		StartAt    int     `json:"startAt"`
+		MaxResults int     `json:"maxResults"`
+		Total      int     `json:"total"`
+		Issues     []Issue `json:"issues"`
+	}
+	if err := c.do(ctx, http.MethodPost, path, body, &raw); err != nil {
+		return nil, err
+	}
+
+	nextAt := raw.StartAt + len(raw.Issues)
+	hasMore := nextAt < raw.Total
+	next := ""
+	if hasMore {
+		next = strconv.Itoa(nextAt)
+	}
+	total := raw.Total
+	return &SearchResponse{
+		Issues: raw.Issues,
+		Page: SearchPage{
+			Returned: len(raw.Issues),
+			Limit:    options.MaxResults,
+			Next:     next,
+			HasMore:  hasMore,
+			Total:    &total,
+			Pages:    1,
+		},
+	}, nil
 }
 
 func (c *Client) GetIssue(ctx context.Context, key, fields string) (*Issue, error) {

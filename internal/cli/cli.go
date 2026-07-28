@@ -70,6 +70,12 @@ func (a App) Run(args []string) error {
 		return a.runIssueFields(args[1:], configPath)
 	case "profiles":
 		return a.runProfiles(args[1:], configPath)
+	case "projects":
+		return a.runProjects(args[1:], configPath)
+	case "meta":
+		return a.runMeta(args[1:], configPath)
+	case "users":
+		return a.runUsers(args[1:], configPath)
 	case "triage":
 		return a.runTriage(args[1:], configPath)
 	case "help", "-h", "--help":

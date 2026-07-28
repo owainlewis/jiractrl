@@ -302,6 +302,29 @@ Inspect populated fields on an issue:
 jiractrl issue-fields MYPROJ-123
 ```
 
+Discover valid projects, issue types, fields, and assignees before a write:
+
+```sh
+jiractrl projects list --query platform --json
+jiractrl projects get MYPROJ --json
+jiractrl projects issue-types MYPROJ --json
+jiractrl meta create --project MYPROJ --type 10001 --json
+jiractrl meta edit MYPROJ-123 --json
+jiractrl users assignable --project MYPROJ --query owain --json
+jiractrl users assignable --issue MYPROJ-123 --query owain --json
+```
+
+Project, issue-type, create-field, and user results include normalized page
+metadata. Create and edit metadata includes field IDs, names, required flags,
+schemas, default values, and allowed values. An empty `allowedValues` array is
+preserved. If an issue-type name matches more than one ID, the CLI returns an
+`ambiguous` error with candidates instead of choosing one.
+
+Jira Cloud discovery keeps `accountId`; Data Center discovery keeps `name` and
+`key`. Agents should copy the identity supplied by their deployment and never
+guess or translate one form into another. Cloud create metadata uses the
+current project and issue-type scoped endpoints.
+
 List profiles:
 
 ```sh

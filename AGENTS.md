@@ -10,7 +10,7 @@ Prefer JSON output for agent workflows.
 
 ## Safety Rules
 
-- Treat read commands as safe: `auth check`, `search`, `get`, `fields`, `issue-fields`, `transitions`, `profiles`, `triage`.
+- Treat read commands as safe: `auth check`, `search`, `get`, `fields`, `issue-fields`, `transitions`, `profiles`, `projects`, `meta`, `users`, `triage`.
 - Treat write commands as mutating Jira: `create`, `update`, `comment`, `transition`.
 - Before writing custom fields, run `jiractrl fields --json` and, when possible, `jiractrl issue-fields ISSUE --json`.
 - Do not guess custom field IDs.

@@ -1,5 +1,39 @@
 package jira
 
+type Deployment string
+
+const (
+	DeploymentAuto       Deployment = "auto"
+	DeploymentCloud      Deployment = "cloud"
+	DeploymentDataCenter Deployment = "data_center"
+)
+
+type CapabilityStatus string
+
+const (
+	CapabilityAvailable CapabilityStatus = "available"
+	CapabilityUnknown   CapabilityStatus = "unknown"
+	CapabilityMissing   CapabilityStatus = "unavailable"
+)
+
+type Capabilities struct {
+	Platform          CapabilityStatus `json:"platform"`
+	Software          CapabilityStatus `json:"software"`
+	ServiceManagement CapabilityStatus `json:"service_management"`
+}
+
+type ServerInfo struct {
+	BaseURL          string       `json:"baseUrl"`
+	Version          string       `json:"version"`
+	VersionNumbers   []int        `json:"versionNumbers,omitempty"`
+	DeploymentType   string       `json:"deploymentType"`
+	BuildNumber      int          `json:"buildNumber,omitempty"`
+	ServerTitle      string       `json:"serverTitle,omitempty"`
+	Deployment       Deployment   `json:"deployment"`
+	DeploymentSource string       `json:"deploymentSource"`
+	Capabilities     Capabilities `json:"capabilities"`
+}
+
 type User struct {
 	Key          string `json:"key"`
 	Name         string `json:"name"`

@@ -18,12 +18,13 @@ import (
 )
 
 type App struct {
+	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
 }
 
 func Run(args []string, stdout, stderr io.Writer) error {
-	err := (App{Stdout: stdout, Stderr: stderr}).Run(args)
+	err := (App{Stdin: os.Stdin, Stdout: stdout, Stderr: stderr}).Run(args)
 	if err == nil || !wantsJSON(args) {
 		return err
 	}
@@ -331,27 +332,65 @@ func (a App) runCreate(args []string, configPath string) error {
 	summary := fs.String("summary", "", "issue summary")
 	description := fs.String("description", "", "issue description")
 	descriptionFile := fs.String("description-file", "", "path to description file")
-	rawJSON := fs.Bool("json", false, "print JSON response")
+	inputPath := fs.String("input", "", "structured JSON input file, or - for stdin")
+	dryRun := fs.Bool("dry-run", false, "print the exact Jira request without sending it")
+	jsonOutput := fs.Bool("json", false, "print JSON response")
 
 	if err := fs.Parse(flagsBeforeLeadingPositional(args)); err != nil {
-		return errors.New("usage: jiractrl create --project KEY --type Task --summary '...' [--description '...']")
+		return errors.New("usage: jiractrl create (--project KEY --summary TEXT | --input FILE|-) [--dry-run] [--json]")
 	}
-	if strings.TrimSpace(*project) == "" || strings.TrimSpace(*summary) == "" {
-		return errors.New("missing required --project or --summary")
+	if fs.NArg() != 0 {
+		return errors.New("usage: jiractrl create (--project KEY --summary TEXT | --input FILE|-) [--dry-run] [--json]")
 	}
-	body, err := readInlineOrFile(*description, *descriptionFile)
-	if err != nil {
-		return err
+
+	var payload map[string]any
+	if strings.TrimSpace(*inputPath) != "" {
+		if flagWasSet(fs, "project", "type", "summary", "description", "description-file") {
+			return errors.New("--input conflicts with create convenience flags")
+		}
+		var err error
+		payload, err = a.readMutationInput(*inputPath)
+		if err != nil {
+			return err
+		}
+		if err := validateMutationEnvelope("create", payload); err != nil {
+			return err
+		}
+	} else {
+		if strings.TrimSpace(*project) == "" || strings.TrimSpace(*summary) == "" {
+			return errors.New("missing required --project or --summary")
+		}
+		body, err := readInlineOrFile(*description, *descriptionFile)
+		if err != nil {
+			return err
+		}
+		fields := map[string]any{
+			"project":   map[string]string{"key": *project},
+			"issuetype": map[string]string{"name": *issueType},
+			"summary":   *summary,
+		}
+		if strings.TrimSpace(body) != "" {
+			fields["description"] = body
+		}
+		payload = map[string]any{"fields": fields}
 	}
+
 	client, err := a.client(configPath, 30*time.Second)
 	if err != nil {
 		return err
 	}
-	created, err := client.CreateIssue(context.Background(), *project, *issueType, *summary, body)
+	if *dryRun {
+		request, err := client.PlanCreateIssue(context.Background(), payload)
+		if err != nil {
+			return err
+		}
+		return writeDryRun(a.Stdout, request)
+	}
+	created, err := client.CreateIssueWithPayload(context.Background(), payload)
 	if err != nil {
 		return err
 	}
-	if *rawJSON {
+	if *jsonOutput {
 		return writeSuccessJSON(a.Stdout, created)
 	}
 	fmt.Fprintf(a.Stdout, "Created %s\n", created.Key)
@@ -364,6 +403,8 @@ func (a App) runUpdate(args []string, configPath string) error {
 	description := fs.String("description", "", "new description")
 	descriptionFile := fs.String("description-file", "", "path to description file")
 	fieldValues := multiFlag{}
+	inputPath := fs.String("input", "", "structured JSON input file, or - for stdin")
+	dryRun := fs.Bool("dry-run", false, "print the exact Jira request without sending it")
 	jsonOutput := fs.Bool("json", false, "print JSON response")
 	fs.Var(&fieldValues, "field", "field assignment as name=value; may be repeated")
 
@@ -374,33 +415,56 @@ func (a App) runUpdate(args []string, configPath string) error {
 		return errors.New("usage: jiractrl update ISSUE-123 [--summary '...'] [--description '...'] [--field name=value]")
 	}
 
-	fields := map[string]any{}
-	if strings.TrimSpace(*summary) != "" {
-		fields["summary"] = *summary
-	}
-	if strings.TrimSpace(*description) != "" || strings.TrimSpace(*descriptionFile) != "" {
-		body, err := readInlineOrFile(*description, *descriptionFile)
+	var payload map[string]any
+	if strings.TrimSpace(*inputPath) != "" {
+		if flagWasSet(fs, "summary", "description", "description-file", "field") {
+			return errors.New("--input conflicts with update convenience flags")
+		}
+		var err error
+		payload, err = a.readMutationInput(*inputPath)
 		if err != nil {
 			return err
 		}
-		fields["description"] = body
-	}
-	for _, value := range fieldValues {
-		name, raw, ok := strings.Cut(value, "=")
-		if !ok || strings.TrimSpace(name) == "" {
-			return fmt.Errorf("invalid --field %q; use name=value", value)
+		if err := validateMutationEnvelope("update", payload); err != nil {
+			return err
 		}
-		fields[strings.TrimSpace(name)] = strings.TrimSpace(raw)
-	}
-	if len(fields) == 0 {
-		return errors.New("no updates requested")
+	} else {
+		fields := map[string]any{}
+		if strings.TrimSpace(*summary) != "" {
+			fields["summary"] = *summary
+		}
+		if strings.TrimSpace(*description) != "" || strings.TrimSpace(*descriptionFile) != "" {
+			body, err := readInlineOrFile(*description, *descriptionFile)
+			if err != nil {
+				return err
+			}
+			fields["description"] = body
+		}
+		for _, value := range fieldValues {
+			name, raw, ok := strings.Cut(value, "=")
+			if !ok || strings.TrimSpace(name) == "" {
+				return fmt.Errorf("invalid --field %q; use name=value", value)
+			}
+			fields[strings.TrimSpace(name)] = strings.TrimSpace(raw)
+		}
+		if len(fields) == 0 {
+			return errors.New("no updates requested")
+		}
+		payload = map[string]any{"fields": fields}
 	}
 
 	client, err := a.client(configPath, 30*time.Second)
 	if err != nil {
 		return err
 	}
-	if err := client.UpdateIssue(context.Background(), fs.Arg(0), fields); err != nil {
+	if *dryRun {
+		request, err := client.PlanUpdateIssue(context.Background(), fs.Arg(0), payload)
+		if err != nil {
+			return err
+		}
+		return writeDryRun(a.Stdout, request)
+	}
+	if err := client.UpdateIssueWithPayload(context.Background(), fs.Arg(0), payload); err != nil {
 		return err
 	}
 	if *jsonOutput {
@@ -478,48 +542,86 @@ func (a App) runTransitions(args []string, configPath string) error {
 func (a App) runTransition(args []string, configPath string) error {
 	fs := newFlagSet("transition")
 	to := fs.String("to", "", "transition name or id")
+	inputPath := fs.String("input", "", "structured JSON input file, or - for stdin")
+	dryRun := fs.Bool("dry-run", false, "print the exact Jira request without sending it")
 	jsonOutput := fs.Bool("json", false, "print JSON response")
 	if err := fs.Parse(flagsBeforeLeadingPositional(args)); err != nil {
 		return errors.New("usage: jiractrl transition ISSUE-123 --to 'In Progress'")
 	}
-	if fs.NArg() != 1 || strings.TrimSpace(fs.Arg(0)) == "" || strings.TrimSpace(*to) == "" {
-		return errors.New("usage: jiractrl transition ISSUE-123 --to 'In Progress'")
+	if fs.NArg() != 1 || strings.TrimSpace(fs.Arg(0)) == "" {
+		return errors.New("usage: jiractrl transition ISSUE-123 (--to NAME_OR_ID | --input FILE|-) [--dry-run] [--json]")
+	}
+
+	payload := map[string]any{}
+	if strings.TrimSpace(*inputPath) != "" {
+		var err error
+		payload, err = a.readMutationInput(*inputPath)
+		if err != nil {
+			return err
+		}
+		if err := validateMutationEnvelope("transition", payload); err != nil {
+			return err
+		}
+		if _, hasTransition := payload["transition"]; hasTransition && strings.TrimSpace(*to) != "" {
+			return errors.New("--to conflicts with --input transition")
+		}
+	}
+	if strings.TrimSpace(*to) == "" {
+		if _, ok := payload["transition"]; !ok {
+			return errors.New("transition requires --to or --input with transition.id")
+		}
 	}
 
 	client, err := a.client(configPath, 30*time.Second)
 	if err != nil {
 		return err
 	}
-	transitions, err := client.Transitions(context.Background(), fs.Arg(0))
-	if err != nil {
-		return err
-	}
-	id := ""
 	selectedName := ""
-	for _, transition := range transitions.Transitions {
-		if strings.EqualFold(transition.ID, *to) || strings.EqualFold(transition.Name, *to) {
-			id = transition.ID
-			selectedName = transition.Name
-			break
+	if strings.TrimSpace(*to) != "" {
+		transitions, err := client.Transitions(context.Background(), fs.Arg(0))
+		if err != nil {
+			return err
 		}
+		id := ""
+		for _, transition := range transitions.Transitions {
+			if strings.EqualFold(transition.ID, *to) || strings.EqualFold(transition.Name, *to) {
+				id = transition.ID
+				selectedName = transition.Name
+				break
+			}
+		}
+		if id == "" {
+			return fmt.Errorf("transition %q not found", *to)
+		}
+		payload["transition"] = map[string]any{"id": id}
 	}
-	if id == "" {
-		return fmt.Errorf("transition %q not found", *to)
+
+	if *dryRun {
+		request, err := client.PlanTransitionIssue(context.Background(), fs.Arg(0), payload)
+		if err != nil {
+			return err
+		}
+		return writeDryRun(a.Stdout, request)
 	}
-	if err := client.TransitionIssue(context.Background(), fs.Arg(0), id); err != nil {
+	if err := client.TransitionIssueWithPayload(context.Background(), fs.Arg(0), payload); err != nil {
 		return err
 	}
+	transitionID := payload["transition"].(map[string]any)["id"].(string)
 	if *jsonOutput {
 		return writeSuccessJSON(a.Stdout, map[string]any{
 			"issue": fs.Arg(0),
 			"transition": map[string]string{
-				"id":   id,
+				"id":   transitionID,
 				"name": selectedName,
 			},
 			"transitioned": true,
 		})
 	}
-	fmt.Fprintf(a.Stdout, "Transitioned %s via %s\n", fs.Arg(0), *to)
+	label := *to
+	if strings.TrimSpace(label) == "" {
+		label = transitionID
+	}
+	fmt.Fprintf(a.Stdout, "Transitioned %s via %s\n", fs.Arg(0), label)
 	return nil
 }
 
@@ -764,4 +866,17 @@ func flagsBeforeLeadingPositional(args []string) []string {
 	}
 	reordered := append([]string(nil), args[1:]...)
 	return append(reordered, args[0])
+}
+
+func flagWasSet(fs *flag.FlagSet, names ...string) bool {
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) {
+		set[f.Name] = true
+	})
+	for _, name := range names {
+		if set[name] {
+			return true
+		}
+	}
+	return false
 }

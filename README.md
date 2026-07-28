@@ -219,6 +219,53 @@ Create an issue:
 jiractrl create --project MYPROJ --type Task --summary "Fix the thing" --description "Details"
 ```
 
+Use typed Jira JSON when fields need booleans, numbers, nulls, arrays, or
+objects:
+
+```json
+{
+  "fields": {
+    "project": {"key": "MYPROJ"},
+    "issuetype": {"id": "10001"},
+    "summary": "Typed issue",
+    "customfield_10042": {"accountId": "abc123"},
+    "customfield_10043": [{"id": "20001"}, {"id": "20002"}],
+    "customfield_10044": 3.5,
+    "parent": {"key": "MYPROJ-10"},
+    "duedate": "2026-08-01"
+  },
+  "properties": [
+    {"key": "created-by", "value": {"agent": true}}
+  ]
+}
+```
+
+Pass the object from a file or stdin:
+
+```sh
+jiractrl create --input issue.json --json
+jiractrl create --input - --json < issue.json
+```
+
+Create accepts `fields`, `update`, `transition`, `properties`, and
+`historyMetadata`. Update accepts `fields`, `update`, `properties`, and
+`historyMetadata`. Transition accepts those keys plus `transition`, whose
+`id` must be a string. Unknown top-level keys and incorrectly typed envelope
+members fail locally. Input is limited to 1 MiB.
+
+Structured input conflicts with create or update convenience flags. For a
+transition, `--to` may be combined with input containing transition-screen
+fields, but it conflicts when the input also contains `transition`.
+
+Preview the exact method, deployment-aware path, and body without sending a
+mutation:
+
+```sh
+jiractrl create --input issue.json --dry-run
+jiractrl update MYPROJ-123 --input update.json --dry-run
+jiractrl transition MYPROJ-123 --input transition.json --dry-run
+```
+
 Update an issue:
 
 ```sh

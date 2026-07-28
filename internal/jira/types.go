@@ -171,6 +171,12 @@ type CreatedIssue struct {
 	Self string `json:"self"`
 }
 
+type MutationRequest struct {
+	Method string         `json:"method"`
+	Path   string         `json:"path"`
+	Body   map[string]any `json:"body"`
+}
+
 type TransitionResponse struct {
 	Transitions []Transition `json:"transitions"`
 }

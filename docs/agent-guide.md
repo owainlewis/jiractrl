@@ -103,6 +103,31 @@ jiractrl comment MYPROJ-123 --body "Follow-up context."
 jiractrl transition MYPROJ-123 --to "In Progress"
 ```
 
+For typed custom fields and compound mutations, pass one Jira-compatible JSON
+object through `--input FILE` or `--input -`. Use `--dry-run` first to inspect
+the exact method, path, and body without calling a mutation endpoint:
+
+```sh
+jiractrl update MYPROJ-123 --input update.json --dry-run
+jiractrl update MYPROJ-123 --input update.json --json
+```
+
+Create input accepts `fields`, `update`, `transition`, `properties`, and
+`historyMetadata`. Update input accepts `fields`, `update`, `properties`, and
+`historyMetadata`. Transition input accepts `transition`, `fields`, `update`,
+`properties`, and `historyMetadata`. Use a string transition ID:
+
+```json
+{
+  "transition": {"id": "31"},
+  "fields": {"resolution": {"id": "1"}}
+}
+```
+
+Do not combine structured create or update input with convenience flags. A
+transition can use `--to` with input fields only; do not also include a
+`transition` object. Input is capped at 1 MiB.
+
 ## Common Agent Recipes
 
 ### Search and summarize open work

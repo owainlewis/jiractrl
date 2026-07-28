@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/owainlewis/jiractrl/internal/jira"
@@ -166,10 +167,32 @@ func isRetryableServerStatus(status int) bool {
 }
 
 func wantsJSON(args []string) bool {
+	dryRun := false
 	for _, arg := range args {
-		if arg == "--json" || arg == "--raw-json" || arg == "--json=true" || arg == "--raw-json=true" {
+		if arg == "--json" || arg == "--raw-json" ||
+			arg == "--json=true" || arg == "--raw-json=true" {
 			return true
 		}
+		if arg == "--dry-run" || arg == "--dry-run=true" {
+			dryRun = true
+		}
 	}
-	return false
+	if !dryRun {
+		return false
+	}
+	command := commandName(args)
+	return command == "create" || command == "update" || command == "transition"
+}
+
+func commandName(args []string) string {
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--config":
+			i++
+		case strings.HasPrefix(args[i], "--config="):
+		case !strings.HasPrefix(args[i], "-"):
+			return args[i]
+		}
+	}
+	return ""
 }

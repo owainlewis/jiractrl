@@ -26,10 +26,10 @@ Read:
   triage --jql JQL           Dry-run issue quality triage
 
 Write:
-  create --project KEY --summary TEXT [--type Task] [--description TEXT]
-  update ISSUE [--summary TEXT] [--description TEXT] [--field name=value]
+  create (--project KEY --summary TEXT | --input FILE|-)
+  update ISSUE [--summary TEXT | --input FILE|-]
   comment ISSUE --body TEXT
-  transition ISSUE --to NAME_OR_ID
+  transition ISSUE (--to NAME_OR_ID | --input FILE|-)
 
 Global flags:
   --config PATH              Use a specific config.toml
@@ -99,15 +99,23 @@ exact Jira response.
 `)
 	case "create":
 		fmt.Fprint(w, `Usage:
-  jiractrl create --project MYPROJ --type Task --summary 'Summary' [--description 'Body'] [--description-file body.md] [--json]
+  jiractrl create --project MYPROJ --type Task --summary 'Summary' [--description 'Body'] [--description-file body.md] [--dry-run] [--json]
+  jiractrl create --input issue.json [--dry-run] [--json]
+  jiractrl create --input - [--dry-run] [--json]
 
-Creates a Jira issue. --project and --summary are required.
+Creates a Jira issue. Structured input accepts fields, update, transition,
+properties, and historyMetadata. Do not combine --input with convenience flags.
+--dry-run prints the resolved request and does not send the mutation.
 `)
 	case "update":
 		fmt.Fprint(w, `Usage:
-  jiractrl update ISSUE-123 [--summary 'New summary'] [--description 'Body'] [--description-file body.md] [--field customfield_12345=value] [--json]
+  jiractrl update ISSUE-123 [--summary 'New summary'] [--description 'Body'] [--description-file body.md] [--field customfield_12345=value] [--dry-run] [--json]
+  jiractrl update ISSUE-123 --input update.json [--dry-run] [--json]
+  jiractrl update ISSUE-123 --input - [--dry-run] [--json]
 
 Updates issue fields. Repeat --field for multiple raw field assignments.
+Structured input accepts fields, update, properties, and historyMetadata.
+Do not combine --input with convenience flags. --dry-run does not mutate Jira.
 `)
 	case "comment":
 		fmt.Fprint(w, `Usage:
@@ -124,10 +132,14 @@ Lists available workflow transitions for an issue.
 `)
 	case "transition":
 		fmt.Fprint(w, `Usage:
-  jiractrl transition ISSUE-123 --to 'In Progress' [--json]
-  jiractrl transition ISSUE-123 --to 31 [--json]
+  jiractrl transition ISSUE-123 --to 'In Progress' [--dry-run] [--json]
+  jiractrl transition ISSUE-123 --input transition.json [--dry-run] [--json]
+  jiractrl transition ISSUE-123 --to 31 --input transition-fields.json [--dry-run] [--json]
 
-Transitions an issue by transition name or ID.
+Structured input accepts transition, fields, update, properties, and
+historyMetadata. transition.id must be a string. --to may be combined with
+input that omits transition, but conflicts with input that already sets it.
+--dry-run does not send the transition.
 `)
 	case "fields":
 		fmt.Fprint(w, `Usage:

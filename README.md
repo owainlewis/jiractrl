@@ -126,6 +126,22 @@ Search with a profile:
 jiractrl search --profile project_recent --json
 ```
 
+Fetch multiple pages within a hard issue budget:
+
+```sh
+jiractrl search --profile project_recent --all --limit 500 --json
+```
+
+Continue from the opaque `page.next` value returned by JSON output:
+
+```sh
+jiractrl search --profile project_recent --cursor 'CONTINUATION'
+```
+
+`search` uses Jira Cloud enhanced JQL search and Data Center's supported
+offset search behind the same cursor interface. `--max` is the page size;
+`--all` never returns more than `--limit` issues.
+
 Get an issue:
 
 ```sh

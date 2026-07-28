@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -153,13 +154,34 @@ func (a App) runSearch(args []string, configPath string) error {
 	fs := newFlagSet("search")
 	jql := fs.String("jql", "", "JQL query to run")
 	profileName := fs.String("profile", "", "profile from config.toml to use")
-	maxResults := fs.Int("max", 0, "maximum number of issues to return")
+	maxResults := fs.Int("max", 0, "maximum issues per Jira request")
+	allResults := fs.Bool("all", false, "fetch pages up to --limit")
+	limit := fs.Int("limit", 1000, "hard issue limit when --all is set")
+	cursor := fs.String("cursor", "", "opaque continuation cursor from a prior search")
 	rawJSON := fs.Bool("json", false, "print JSON response")
 	fields := fs.String("fields", "", "comma-separated fields to request")
 	withDescription := fs.Bool("description", false, "include issue descriptions in text output")
+	reconcileValues := multiFlag{}
+	fs.Var(&reconcileValues, "reconcile", "Cloud issue ID to reconcile for read-after-write consistency; may be repeated")
 
 	if err := fs.Parse(args); err != nil {
-		return errors.New("usage: jiractrl search --jql '<query>' [--max 20] [--json] [--description]")
+		return errors.New("usage: jiractrl search --jql '<query>' [--max 20] [--cursor CURSOR] [--all --limit 1000] [--json] [--description]")
+	}
+	if *limit < 1 || *limit > 10000 {
+		return errors.New("--limit must be between 1 and 10000")
+	}
+	limitSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "limit" {
+			limitSet = true
+		}
+	})
+	if limitSet && !*allResults {
+		return errors.New("--limit requires --all")
+	}
+	reconcileIDs, err := parsePositiveIDs(reconcileValues)
+	if err != nil {
+		return err
 	}
 
 	cfg, err := config.Load(configPath, 30*time.Second)
@@ -207,7 +229,19 @@ func (a App) runSearch(args []string, configPath string) error {
 	if *withDescription {
 		selectedFields = addField(selectedFields, "description")
 	}
-	result, err := client.Search(context.Background(), *jql, selectedFields, selectedMax)
+	options := jira.SearchOptions{
+		JQL:               *jql,
+		Fields:            splitCommaValues(selectedFields),
+		MaxResults:        selectedMax,
+		Cursor:            strings.TrimSpace(*cursor),
+		ReconcileIssueIDs: reconcileIDs,
+	}
+	var result *jira.SearchResponse
+	if *allResults {
+		result, err = client.SearchAll(context.Background(), options, *limit)
+	} else {
+		result, err = client.Search(context.Background(), options)
+	}
 	if err != nil {
 		return err
 	}
@@ -544,7 +578,11 @@ func (a App) runTriage(args []string, configPath string) error {
 	if err != nil {
 		return err
 	}
-	result, err := client.Search(context.Background(), *jql, triage.Fields, *maxResults)
+	result, err := client.Search(context.Background(), jira.SearchOptions{
+		JQL:        *jql,
+		Fields:     splitCommaValues(triage.Fields),
+		MaxResults: *maxResults,
+	})
 	if err != nil {
 		return err
 	}
@@ -611,4 +649,26 @@ func (m *multiFlag) String() string {
 func (m *multiFlag) Set(value string) error {
 	*m = append(*m, value)
 	return nil
+}
+
+func parsePositiveIDs(values []string) ([]int64, error) {
+	ids := make([]int64, 0, len(values))
+	for _, value := range values {
+		id, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+		if err != nil || id < 1 {
+			return nil, fmt.Errorf("invalid --reconcile issue ID %q: use a positive numeric Jira issue ID", value)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+func splitCommaValues(value string) []string {
+	var values []string
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			values = append(values, item)
+		}
+	}
+	return values
 }

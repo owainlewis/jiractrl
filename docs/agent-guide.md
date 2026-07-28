@@ -54,6 +54,31 @@ jiractrl transitions MYPROJ-123 --json
 jiractrl triage --jql 'project = MYPROJ AND statusCategory != Done' --json
 ```
 
+Search JSON includes an opaque `page.next` cursor and `page.hasMore`. Pass the
+cursor back without interpreting it:
+
+```sh
+jiractrl search --profile my_open --cursor 'CONTINUATION' --json
+```
+
+For bounded multi-page reads, use:
+
+```sh
+jiractrl search --profile my_open --all --limit 500 --json
+```
+
+`--max` controls each Jira request. `--limit` is the total issue budget and
+defaults to 1000. Jira Cloud uses enhanced token pagination; Data Center uses
+offset pagination behind the same opaque cursor field.
+
+After a Jira Cloud write, repeat `--reconcile` with numeric issue IDs when the
+following search must include those writes. One search accepts at most 50
+reconciliation IDs:
+
+```sh
+jiractrl search --jql 'key = MYPROJ-123' --reconcile 10001 --json
+```
+
 ## Write Operations
 
 Write operations mutate Jira. Use them only with explicit intent.

@@ -24,8 +24,16 @@ func TestServerInfoDetectsDeployment(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/rest/agile/1.0/board" {
+					if r.URL.Query().Get("maxResults") != "1" {
+						t.Fatalf("query = %q", r.URL.RawQuery)
+					}
+					_, _ = w.Write([]byte(`{"values":[]}`))
+					return
+				}
 				if r.URL.Path != "/rest/api/2/serverInfo" {
-					t.Fatalf("path = %q", r.URL.Path)
+					http.NotFound(w, r)
+					return
 				}
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(map[string]any{
@@ -50,7 +58,7 @@ func TestServerInfoDetectsDeployment(t *testing.T) {
 			if info.Capabilities.Platform != CapabilityAvailable {
 				t.Fatalf("platform capability = %q", info.Capabilities.Platform)
 			}
-			if info.Capabilities.Software != CapabilityUnknown {
+			if info.Capabilities.Software != CapabilityAvailable {
 				t.Fatalf("software capability = %q", info.Capabilities.Software)
 			}
 		})

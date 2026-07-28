@@ -92,6 +92,16 @@ func (a App) Run(args []string) error {
 		return a.runWatchers(args[1:], configPath)
 	case "bulk":
 		return a.runBulk(args[1:], configPath)
+	case "boards":
+		return a.runBoards(args[1:], configPath)
+	case "sprints":
+		return a.runSprints(args[1:], configPath)
+	case "backlog":
+		return a.runBacklog(args[1:], configPath)
+	case "rank":
+		return a.runRank(args[1:], configPath)
+	case "estimate":
+		return a.runEstimate(args[1:], configPath)
 	case "triage":
 		return a.runTriage(args[1:], configPath)
 	case "help", "-h", "--help":

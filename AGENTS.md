@@ -10,8 +10,8 @@ Prefer JSON output for agent workflows.
 
 ## Safety Rules
 
-- Treat read commands as safe: `auth check`, `search`, `get`, `fields`, `issue-fields`, `transitions`, `profiles`, `projects`, `meta`, `users`, `comments list`, `links types`, `links list`, `attachments list`, `attachments download`, `changelog`, `worklogs list`, `watchers list`, `triage`.
-- Treat write commands as mutating Jira: `create`, `update`, `assign`, `comments add`, `comments update`, `comments remove`, `comment`, `links add`, `links remove`, `attachments upload`, `attachments remove`, `worklogs add`, `worklogs update`, `watchers add`, `watchers remove`, `transition`, `bulk create`, `bulk update`, `bulk transition`.
+- Treat read commands as safe: `auth check`, `search`, `get`, `fields`, `issue-fields`, `transitions`, `profiles`, `projects`, `meta`, `users`, `comments list`, `links types`, `links list`, `attachments list`, `attachments download`, `changelog`, `worklogs list`, `watchers list`, `boards list`, `boards get`, `boards issues`, `boards backlog`, `sprints list`, `sprints get`, `sprints issues`, `triage`.
+- Treat write commands as mutating Jira: `create`, `update`, `assign`, `comments add`, `comments update`, `comments remove`, `comment`, `links add`, `links remove`, `attachments upload`, `attachments remove`, `worklogs add`, `worklogs update`, `watchers add`, `watchers remove`, `transition`, `bulk create`, `bulk update`, `bulk transition`, `sprints move`, `backlog move`, `rank`, `estimate`.
 - Before writing custom fields, run `jiractrl fields --json` and, when possible, `jiractrl issue-fields ISSUE --json`.
 - Do not guess custom field IDs.
 - Do not store tokens in prompts, logs, commits, or generated docs.
@@ -54,6 +54,7 @@ Prefer JSON output for agent workflows.
    jiractrl update ISSUE-123 --field customfield_12345=value
    jiractrl transition ISSUE-123 --to "In Progress"
    jiractrl bulk update --input updates.jsonl --dry-run
+   jiractrl sprints move 42 --issue ISSUE-123 --json
    ```
 
 ## Output Expectations
@@ -63,6 +64,8 @@ Prefer JSON output for agent workflows.
 - A partial `bulk ... --json` write is the exception: it exits 1 and writes
   `ok:false`, summary counts, and every item result to stdout. Inspect results
   before retrying.
+- A Jira Software HTTP 207 response also exits 1 and writes exact partial
+  details to stdout when `--json` is set.
 - Rate limits exit 6 and conflicts exit 7. Other exit codes are documented in `README.md`.
 - Human text output is concise and intended for terminals.
 - Errors print through the CLI caller and should be treated as failed operations.

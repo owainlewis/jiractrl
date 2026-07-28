@@ -36,6 +36,9 @@ Read:
   changelog ISSUE            Page and filter issue history
   worklogs list ISSUE        Page through issue worklogs
   watchers list ISSUE        List visible issue watchers
+  boards list|get            Discover Jira Software boards
+  boards issues|backlog ID   Read bounded board issues
+  sprints list|get|issues    Inspect Jira Software sprints
   triage --jql JQL           Dry-run issue quality triage
 
 Write:
@@ -56,6 +59,10 @@ Write:
   watchers add|remove ISSUE --self|--account-id|--user
   transition ISSUE (--to NAME_OR_ID | --input FILE|-)
   bulk create|update|transition --input FILE|-
+  sprints move ID --issue ISSUE
+  backlog move --issue ISSUE
+  rank --issue ISSUE (--before ISSUE|--after ISSUE)
+  estimate ISSUE --board ID --value VALUE
 
 Global flags:
   --config PATH              Use a specific config.toml
@@ -266,6 +273,51 @@ Partial completion returns exit 1. With --json, the command returns an
 ok=false envelope plus every exact item result. Text output includes each item
 status and failure detail. --max-items defaults to 50 and cannot exceed 1000.
 --dry-run plans the whole batch without mutation.
+`)
+	case "boards":
+		fmt.Fprint(w, `Usage:
+  jiractrl boards list [--name TEXT] [--type scrum|kanban] [--project KEY] [--start N] [--max 50] [--all --limit 1000] [--json]
+  jiractrl boards get BOARD_ID [--json]
+  jiractrl boards issues BOARD_ID [--cursor CURSOR] [--max 50] [--all --limit 1000] [--jql JQL] [--fields LIST] [--json]
+  jiractrl boards backlog BOARD_ID [--cursor CURSOR] [--max 50] [--all --limit 1000] [--jql JQL] [--fields LIST] [--json]
+
+Cloud board issue and backlog reads use enhanced token pagination. Data Center
+uses offset pagination behind the same opaque --cursor. --all follows pages
+only to --limit. Board lists use --start offsets on both deployments.
+`)
+	case "sprints":
+		fmt.Fprint(w, `Usage:
+  jiractrl sprints list BOARD_ID [--state active,future,closed] [--start N] [--max 50] [--all --limit 1000] [--json]
+  jiractrl sprints get SPRINT_ID [--json]
+  jiractrl sprints issues SPRINT_ID [--cursor CURSOR] [--max 50] [--all --limit 1000] [--jql JQL] [--fields LIST] [--json]
+  jiractrl sprints move SPRINT_ID --issue ISSUE [--issue ISSUE] [--before ISSUE|--after ISSUE] [--rank-field ID] [--json]
+
+Repeat --issue or use comma-separated values. Jira accepts no more than 50
+issues per move. Input order is preserved. Sprint issue reads use Cloud token
+pagination and Data Center offset pagination. Moves are one-shot writes.
+`)
+	case "backlog":
+		fmt.Fprint(w, `Usage:
+  jiractrl backlog move --issue ISSUE [--issue ISSUE] [--board BOARD_ID] [--json]
+
+Moves up to 50 issues to the general backlog. --board selects a board-scoped
+backlog on Cloud and is unsupported on Data Center. Input order is preserved.
+This is a one-shot write.
+`)
+	case "rank":
+		fmt.Fprint(w, `Usage:
+  jiractrl rank --issue ISSUE [--issue ISSUE] (--before ISSUE|--after ISSUE) [--rank-field ID] [--json]
+
+Ranks up to 50 issues before or after one issue. Input order is preserved.
+Use the board configuration to discover a non-default rank field ID. HTTP 207
+partial results return exit 1 with exact details.
+`)
+	case "estimate":
+		fmt.Fprint(w, `Usage:
+  jiractrl estimate ISSUE --board BOARD_ID --value VALUE [--json]
+
+Updates the estimate selected by the board's Jira Software configuration. The
+value is sent as a string. This is a one-shot write.
 `)
 	case "fields":
 		fmt.Fprint(w, `Usage:

@@ -28,6 +28,10 @@ func TestParseGlobalFlags(t *testing.T) {
 
 func TestRunServerInfoJSON(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/rest/agile/1.0/board" {
+			_, _ = w.Write([]byte(`{"values":[]}`))
+			return
+		}
 		if r.URL.Path != "/rest/api/2/serverInfo" {
 			t.Fatalf("path = %q", r.URL.Path)
 		}

@@ -25,6 +25,9 @@ type Client struct {
 	deployment         Deployment
 	deploymentErr      error
 	detectOnce         sync.Once
+	softwareOnce       sync.Once
+	softwareStatus     CapabilityStatus
+	softwareErr        error
 	http               *http.Client
 	retry              RetryPolicy
 	sleep              func(context.Context, time.Duration) error
@@ -129,22 +132,66 @@ func (c *Client) ServerInfo(ctx context.Context) (*ServerInfo, error) {
 		if c.deploymentOverride == "" || c.deploymentOverride == DeploymentAuto {
 			return nil, err
 		}
-		return &ServerInfo{
+		info = &ServerInfo{
 			BaseURL:          c.baseURL,
 			Deployment:       c.deploymentOverride,
 			DeploymentSource: "config",
 			Capabilities:     capabilitiesFor(c.deploymentOverride),
-		}, nil
+		}
+	} else {
+		deployment, source, err := c.resolveDeployment(info)
+		if err != nil {
+			return nil, err
+		}
+		info.Deployment = deployment
+		info.DeploymentSource = source
+		info.Capabilities = capabilitiesFor(deployment)
 	}
 
-	deployment, source, err := c.resolveDeployment(info)
-	if err != nil {
-		return nil, err
-	}
-	info.Deployment = deployment
-	info.DeploymentSource = source
-	info.Capabilities = capabilitiesFor(deployment)
+	status, _ := c.softwareCapability(ctx, info.Deployment)
+	info.Capabilities.Software = status
 	return info, nil
+}
+
+func (c *Client) SoftwareCapability(ctx context.Context) (CapabilityStatus, error) {
+	deployment, err := c.Deployment(ctx)
+	if err != nil {
+		return CapabilityUnknown, err
+	}
+	return c.softwareCapability(ctx, deployment)
+}
+
+func (c *Client) softwareCapability(ctx context.Context, deployment Deployment) (CapabilityStatus, error) {
+	c.softwareOnce.Do(func() {
+		var result struct {
+			Values []json.RawMessage `json:"values"`
+		}
+		mode := authBearer
+		if deployment == DeploymentCloud && c.email != "" {
+			mode = authBasic
+		}
+		err := c.doReadWithAuth(ctx, http.MethodGet, "/rest/agile/1.0/board?maxResults=1", nil, &result, mode)
+		if err == nil {
+			c.softwareStatus = CapabilityAvailable
+			return
+		}
+		var jiraErr *Error
+		if errors.As(err, &jiraErr) && jiraErr.StatusCode == http.StatusNotFound {
+			c.softwareStatus = CapabilityMissing
+			return
+		}
+		c.softwareStatus = CapabilityUnknown
+		c.softwareErr = err
+	})
+	return c.softwareStatus, c.softwareErr
+}
+
+func (c *Client) RequireSoftware(ctx context.Context) error {
+	status, err := c.SoftwareCapability(ctx)
+	if err != nil {
+		return err
+	}
+	return c.RequireCapability(ctx, "jira_software", status)
 }
 
 func (c *Client) Deployment(ctx context.Context) (Deployment, error) {
@@ -620,6 +667,39 @@ func capabilitiesFor(deployment Deployment) Capabilities {
 
 func (c *Client) do(ctx context.Context, method, path string, body any, out any) error {
 	return c.doWithAuth(ctx, method, path, body, out, c.authMode())
+}
+
+func (c *Client) doRaw(ctx context.Context, method, path string, body any) (int, json.RawMessage, error) {
+	var requestBody io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return 0, nil, err
+		}
+		requestBody = bytes.NewReader(data)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, requestBody)
+	if err != nil {
+		return 0, nil, err
+	}
+	c.applyAuth(req, c.authMode())
+	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp.StatusCode, nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return resp.StatusCode, nil, c.responseError(resp, responseBody)
+	}
+	return resp.StatusCode, json.RawMessage(responseBody), nil
 }
 
 func (c *Client) doRead(ctx context.Context, method, path string, body any, out any) error {

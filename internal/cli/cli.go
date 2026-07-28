@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -24,7 +23,14 @@ type App struct {
 }
 
 func Run(args []string, stdout, stderr io.Writer) error {
-	return App{Stdout: stdout, Stderr: stderr}.Run(args)
+	err := (App{Stdout: stdout, Stderr: stderr}).Run(args)
+	if err == nil || !wantsJSON(args) {
+		return err
+	}
+	if writeErr := writeErrorJSON(stderr, err); writeErr != nil {
+		return writeErr
+	}
+	return &reportedError{err: err}
 }
 
 func (a App) Run(args []string) error {
@@ -94,7 +100,7 @@ func (a App) runServerInfo(args []string, configPath string) error {
 		return err
 	}
 	if *rawJSON {
-		return writeJSON(a.Stdout, info)
+		return writeSuccessJSON(a.Stdout, info)
 	}
 
 	fmt.Fprintf(a.Stdout, "Deployment: %s (%s)\n", info.Deployment, info.DeploymentSource)
@@ -133,7 +139,12 @@ func parseGlobalFlags(args []string, configPath *string) ([]string, error) {
 
 func (a App) runAuth(args []string, configPath string) error {
 	if len(args) == 0 || args[0] != "check" {
-		return errors.New("usage: jiractrl auth check")
+		return errors.New("usage: jiractrl auth check [--json]")
+	}
+	fs := newFlagSet("auth check")
+	jsonOutput := fs.Bool("json", false, "print JSON response")
+	if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 0 {
+		return errors.New("usage: jiractrl auth check [--json]")
 	}
 
 	client, err := a.client(configPath, 15*time.Second)
@@ -146,6 +157,12 @@ func (a App) runAuth(args []string, configPath string) error {
 	}
 
 	name := firstNonEmpty(me.DisplayName, me.Name, me.EmailAddress, me.Key, "(authenticated user)")
+	if *jsonOutput {
+		return writeSuccessJSON(a.Stdout, map[string]any{
+			"authenticated": true,
+			"user":          me,
+		})
+	}
 	fmt.Fprintf(a.Stdout, "Authenticated as %s\n", name)
 	return nil
 }
@@ -158,17 +175,24 @@ func (a App) runSearch(args []string, configPath string) error {
 	allResults := fs.Bool("all", false, "fetch pages up to --limit")
 	limit := fs.Int("limit", 1000, "hard issue limit when --all is set")
 	cursor := fs.String("cursor", "", "opaque continuation cursor from a prior search")
-	rawJSON := fs.Bool("json", false, "print JSON response")
+	jsonOutput := fs.Bool("json", false, "print stable JSON envelope")
+	rawJSON := fs.Bool("raw-json", false, "print the exact single-page Jira JSON response")
 	fields := fs.String("fields", "", "comma-separated fields to request")
 	withDescription := fs.Bool("description", false, "include issue descriptions in text output")
 	reconcileValues := multiFlag{}
 	fs.Var(&reconcileValues, "reconcile", "Cloud issue ID to reconcile for read-after-write consistency; may be repeated")
 
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(flagsBeforeLeadingPositional(args)); err != nil {
 		return errors.New("usage: jiractrl search --jql '<query>' [--max 20] [--cursor CURSOR] [--all --limit 1000] [--json] [--description]")
 	}
 	if *limit < 1 || *limit > 10000 {
 		return errors.New("--limit must be between 1 and 10000")
+	}
+	if *jsonOutput && *rawJSON {
+		return errors.New("use either --json or --raw-json, not both")
+	}
+	if *rawJSON && *allResults {
+		return errors.New("--raw-json cannot be combined with --all")
 	}
 	limitSet := false
 	fs.Visit(func(f *flag.Flag) {
@@ -236,6 +260,14 @@ func (a App) runSearch(args []string, configPath string) error {
 		Cursor:            strings.TrimSpace(*cursor),
 		ReconcileIssueIDs: reconcileIDs,
 	}
+	if *rawJSON {
+		raw, err := client.SearchRawJSON(context.Background(), options)
+		if err != nil {
+			return err
+		}
+		_, err = a.Stdout.Write(raw)
+		return err
+	}
 	var result *jira.SearchResponse
 	if *allResults {
 		result, err = client.SearchAll(context.Background(), options, *limit)
@@ -246,8 +278,8 @@ func (a App) runSearch(args []string, configPath string) error {
 		return err
 	}
 
-	if *rawJSON {
-		return writeJSON(a.Stdout, result)
+	if *jsonOutput {
+		return writeSuccessJSON(a.Stdout, result)
 	}
 	printIssues(a.Stdout, result, *withDescription)
 	return nil
@@ -255,26 +287,38 @@ func (a App) runSearch(args []string, configPath string) error {
 
 func (a App) runGet(args []string, configPath string) error {
 	fs := newFlagSet("get")
-	rawJSON := fs.Bool("json", false, "print JSON response")
+	jsonOutput := fs.Bool("json", false, "print stable JSON envelope")
+	rawJSON := fs.Bool("raw-json", false, "print the exact Jira JSON response")
 	fields := fs.String("fields", "summary,description,status,assignee,priority,issuetype,labels,created,updated,comment", "comma-separated fields to request")
 
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(flagsBeforeLeadingPositional(args)); err != nil {
 		return errors.New("usage: jiractrl get ISSUE-123 [--json]")
 	}
 	if fs.NArg() != 1 || strings.TrimSpace(fs.Arg(0)) == "" {
 		return errors.New("usage: jiractrl get ISSUE-123 [--json]")
+	}
+	if *jsonOutput && *rawJSON {
+		return errors.New("use either --json or --raw-json, not both")
 	}
 
 	client, err := a.client(configPath, 30*time.Second)
 	if err != nil {
 		return err
 	}
+	if *rawJSON {
+		raw, err := client.GetIssueRawJSON(context.Background(), fs.Arg(0), *fields)
+		if err != nil {
+			return err
+		}
+		_, err = a.Stdout.Write(raw)
+		return err
+	}
 	issue, err := client.GetIssue(context.Background(), fs.Arg(0), *fields)
 	if err != nil {
 		return err
 	}
-	if *rawJSON {
-		return writeJSON(a.Stdout, issue)
+	if *jsonOutput {
+		return writeSuccessJSON(a.Stdout, issue)
 	}
 	printIssue(a.Stdout, issue)
 	return nil
@@ -289,7 +333,7 @@ func (a App) runCreate(args []string, configPath string) error {
 	descriptionFile := fs.String("description-file", "", "path to description file")
 	rawJSON := fs.Bool("json", false, "print JSON response")
 
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(flagsBeforeLeadingPositional(args)); err != nil {
 		return errors.New("usage: jiractrl create --project KEY --type Task --summary '...' [--description '...']")
 	}
 	if strings.TrimSpace(*project) == "" || strings.TrimSpace(*summary) == "" {
@@ -308,7 +352,7 @@ func (a App) runCreate(args []string, configPath string) error {
 		return err
 	}
 	if *rawJSON {
-		return writeJSON(a.Stdout, created)
+		return writeSuccessJSON(a.Stdout, created)
 	}
 	fmt.Fprintf(a.Stdout, "Created %s\n", created.Key)
 	return nil
@@ -320,9 +364,10 @@ func (a App) runUpdate(args []string, configPath string) error {
 	description := fs.String("description", "", "new description")
 	descriptionFile := fs.String("description-file", "", "path to description file")
 	fieldValues := multiFlag{}
+	jsonOutput := fs.Bool("json", false, "print JSON response")
 	fs.Var(&fieldValues, "field", "field assignment as name=value; may be repeated")
 
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(flagsBeforeLeadingPositional(args)); err != nil {
 		return errors.New("usage: jiractrl update ISSUE-123 [--summary '...'] [--description '...'] [--field name=value]")
 	}
 	if fs.NArg() != 1 || strings.TrimSpace(fs.Arg(0)) == "" {
@@ -358,6 +403,12 @@ func (a App) runUpdate(args []string, configPath string) error {
 	if err := client.UpdateIssue(context.Background(), fs.Arg(0), fields); err != nil {
 		return err
 	}
+	if *jsonOutput {
+		return writeSuccessJSON(a.Stdout, map[string]any{
+			"issue":   fs.Arg(0),
+			"updated": true,
+		})
+	}
 	fmt.Fprintf(a.Stdout, "Updated %s\n", fs.Arg(0))
 	return nil
 }
@@ -368,7 +419,7 @@ func (a App) runComment(args []string, configPath string) error {
 	bodyFile := fs.String("body-file", "", "path to comment body file")
 	rawJSON := fs.Bool("json", false, "print JSON response")
 
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(flagsBeforeLeadingPositional(args)); err != nil {
 		return errors.New("usage: jiractrl comment ISSUE-123 --body '...'")
 	}
 	if fs.NArg() != 1 || strings.TrimSpace(fs.Arg(0)) == "" {
@@ -391,7 +442,7 @@ func (a App) runComment(args []string, configPath string) error {
 		return err
 	}
 	if *rawJSON {
-		return writeJSON(a.Stdout, result)
+		return writeSuccessJSON(a.Stdout, result)
 	}
 	fmt.Fprintf(a.Stdout, "Commented on %s\n", fs.Arg(0))
 	return nil
@@ -400,7 +451,7 @@ func (a App) runComment(args []string, configPath string) error {
 func (a App) runTransitions(args []string, configPath string) error {
 	fs := newFlagSet("transitions")
 	rawJSON := fs.Bool("json", false, "print JSON response")
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(flagsBeforeLeadingPositional(args)); err != nil {
 		return errors.New("usage: jiractrl transitions ISSUE-123 [--json]")
 	}
 	if fs.NArg() != 1 || strings.TrimSpace(fs.Arg(0)) == "" {
@@ -416,7 +467,7 @@ func (a App) runTransitions(args []string, configPath string) error {
 		return err
 	}
 	if *rawJSON {
-		return writeJSON(a.Stdout, result)
+		return writeSuccessJSON(a.Stdout, result)
 	}
 	for _, transition := range result.Transitions {
 		fmt.Fprintf(a.Stdout, "%s  %s\n", transition.ID, transition.Name)
@@ -427,7 +478,8 @@ func (a App) runTransitions(args []string, configPath string) error {
 func (a App) runTransition(args []string, configPath string) error {
 	fs := newFlagSet("transition")
 	to := fs.String("to", "", "transition name or id")
-	if err := fs.Parse(args); err != nil {
+	jsonOutput := fs.Bool("json", false, "print JSON response")
+	if err := fs.Parse(flagsBeforeLeadingPositional(args)); err != nil {
 		return errors.New("usage: jiractrl transition ISSUE-123 --to 'In Progress'")
 	}
 	if fs.NArg() != 1 || strings.TrimSpace(fs.Arg(0)) == "" || strings.TrimSpace(*to) == "" {
@@ -443,9 +495,11 @@ func (a App) runTransition(args []string, configPath string) error {
 		return err
 	}
 	id := ""
+	selectedName := ""
 	for _, transition := range transitions.Transitions {
 		if strings.EqualFold(transition.ID, *to) || strings.EqualFold(transition.Name, *to) {
 			id = transition.ID
+			selectedName = transition.Name
 			break
 		}
 	}
@@ -455,6 +509,16 @@ func (a App) runTransition(args []string, configPath string) error {
 	if err := client.TransitionIssue(context.Background(), fs.Arg(0), id); err != nil {
 		return err
 	}
+	if *jsonOutput {
+		return writeSuccessJSON(a.Stdout, map[string]any{
+			"issue": fs.Arg(0),
+			"transition": map[string]string{
+				"id":   id,
+				"name": selectedName,
+			},
+			"transitioned": true,
+		})
+	}
 	fmt.Fprintf(a.Stdout, "Transitioned %s via %s\n", fs.Arg(0), *to)
 	return nil
 }
@@ -462,7 +526,7 @@ func (a App) runTransition(args []string, configPath string) error {
 func (a App) runFields(args []string, configPath string) error {
 	fs := newFlagSet("fields")
 	rawJSON := fs.Bool("json", false, "print JSON response")
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(flagsBeforeLeadingPositional(args)); err != nil {
 		return errors.New("usage: jiractrl fields [--json]")
 	}
 
@@ -475,7 +539,7 @@ func (a App) runFields(args []string, configPath string) error {
 		return err
 	}
 	if *rawJSON {
-		return writeJSON(a.Stdout, fields)
+		return writeSuccessJSON(a.Stdout, fields)
 	}
 	for _, field := range fields {
 		fmt.Fprintf(a.Stdout, "%s  %s\n", field.ID, field.Name)
@@ -486,7 +550,7 @@ func (a App) runFields(args []string, configPath string) error {
 func (a App) runIssueFields(args []string, configPath string) error {
 	fs := newFlagSet("issue-fields")
 	rawJSON := fs.Bool("json", false, "print JSON response")
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(flagsBeforeLeadingPositional(args)); err != nil {
 		return errors.New("usage: jiractrl issue-fields ISSUE-123 [--json]")
 	}
 	if fs.NArg() != 1 || strings.TrimSpace(fs.Arg(0)) == "" {
@@ -502,7 +566,7 @@ func (a App) runIssueFields(args []string, configPath string) error {
 		return err
 	}
 	if *rawJSON {
-		return writeJSON(a.Stdout, issue.Fields)
+		return writeSuccessJSON(a.Stdout, issue.Fields)
 	}
 	for name, value := range issue.Fields {
 		if value != nil {
@@ -514,33 +578,54 @@ func (a App) runIssueFields(args []string, configPath string) error {
 
 func (a App) runProfiles(args []string, configPath string) error {
 	if len(args) == 0 {
-		return errors.New("usage: jiractrl profiles list|show NAME")
+		return errors.New("usage: jiractrl profiles list|show NAME [--json]")
+	}
+	subcommand := args[0]
+	fs := newFlagSet("profiles " + subcommand)
+	jsonOutput := fs.Bool("json", false, "print JSON response")
+	if err := fs.Parse(flagsBeforeLeadingPositional(args[1:])); err != nil {
+		return errors.New("usage: jiractrl profiles list|show NAME [--json]")
 	}
 	cfg, err := config.Load(configPath, 5*time.Second)
 	if err != nil {
 		return err
 	}
 
-	switch args[0] {
+	switch subcommand {
 	case "list":
+		if fs.NArg() != 0 {
+			return errors.New("usage: jiractrl profiles list [--json]")
+		}
 		names := make([]string, 0, len(cfg.Profiles))
 		for name := range cfg.Profiles {
 			names = append(names, name)
 		}
 		sort.Strings(names)
+		if *jsonOutput {
+			return writeSuccessJSON(a.Stdout, names)
+		}
 		for _, name := range names {
 			fmt.Fprintln(a.Stdout, name)
 		}
 		return nil
 	case "show":
-		if len(args) != 2 {
-			return errors.New("usage: jiractrl profiles show NAME")
+		if fs.NArg() != 1 {
+			return errors.New("usage: jiractrl profiles show NAME [--json]")
 		}
-		p, ok := cfg.Profiles[args[1]]
+		name := fs.Arg(0)
+		p, ok := cfg.Profiles[name]
 		if !ok {
-			return fmt.Errorf("unknown profile %q", args[1])
+			return fmt.Errorf("unknown profile %q", name)
 		}
-		fmt.Fprintf(a.Stdout, "%s\n", args[1])
+		if *jsonOutput {
+			return writeSuccessJSON(a.Stdout, map[string]any{
+				"name":       name,
+				"jql":        p.JQL,
+				"fields":     p.Fields,
+				"maxResults": p.MaxResults,
+			})
+		}
+		fmt.Fprintf(a.Stdout, "%s\n", name)
 		fmt.Fprintf(a.Stdout, "  jql: %s\n", p.JQL)
 		if len(p.Fields) > 0 {
 			fmt.Fprintf(a.Stdout, "  fields: %s\n", strings.Join(p.Fields, ", "))
@@ -550,7 +635,7 @@ func (a App) runProfiles(args []string, configPath string) error {
 		}
 		return nil
 	default:
-		return errors.New("usage: jiractrl profiles list|show NAME")
+		return errors.New("usage: jiractrl profiles list|show NAME [--json]")
 	}
 }
 
@@ -592,7 +677,7 @@ func (a App) runTriage(args []string, configPath string) error {
 		report = append(report, triage.Classify(issue))
 	}
 	if *rawJSON {
-		return writeJSON(a.Stdout, report)
+		return writeSuccessJSON(a.Stdout, report)
 	}
 	printTriageReport(a.Stdout, report)
 	return nil
@@ -611,19 +696,19 @@ func newJiraClient(cfg config.Config) (*jira.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return jira.NewClient(cfg.BaseURL, cfg.Token, cfg.Email, deployment, cfg.Timeout), nil
+	client := jira.NewClient(cfg.BaseURL, cfg.Token, cfg.Email, deployment, cfg.Timeout)
+	client.SetRetryPolicy(jira.RetryPolicy{
+		MaxAttempts: cfg.RetryMaxAttempts,
+		BaseDelay:   cfg.RetryBaseDelay,
+		MaxDelay:    cfg.RetryMaxDelay,
+	})
+	return client, nil
 }
 
 func newFlagSet(name string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	return fs
-}
-
-func writeJSON(w io.Writer, value any) error {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(value)
 }
 
 func readInlineOrFile(inline, path string) (string, error) {
@@ -671,4 +756,12 @@ func splitCommaValues(value string) []string {
 		}
 	}
 	return values
+}
+
+func flagsBeforeLeadingPositional(args []string) []string {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return args
+	}
+	reordered := append([]string(nil), args[1:]...)
+	return append(reordered, args[0])
 }

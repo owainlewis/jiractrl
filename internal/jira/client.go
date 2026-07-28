@@ -3,10 +3,12 @@ package jira
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -24,23 +26,42 @@ type Client struct {
 	deploymentErr      error
 	detectOnce         sync.Once
 	http               *http.Client
+	retry              RetryPolicy
+	sleep              func(context.Context, time.Duration) error
+	jitter             func(time.Duration) time.Duration
 }
 
 type Error struct {
-	StatusCode int
-	Status     string
-	Body       string
+	StatusCode      int
+	Status          string
+	Body            string
+	ErrorMessages   []string
+	FieldErrors     map[string]string
+	Attempts        int
+	RetryAfter      time.Duration
+	RetryAfterSet   bool
+	RateLimitReason string
+	RateLimitLimit  string
+	RateLimitRemain string
+	RateLimitReset  string
+	RateLimitNear   string
 }
 
 func (e *Error) Error() string {
-	if e.Body == "" {
-		return fmt.Sprintf("jira request failed: %s", e.Status)
+	if len(e.ErrorMessages) > 0 {
+		return fmt.Sprintf("jira request failed: %s: %s", e.Status, strings.Join(e.ErrorMessages, "; "))
 	}
-	return fmt.Sprintf("jira request failed: %s: %s", e.Status, e.Body)
+	return fmt.Sprintf("jira request failed: %s", e.Status)
 }
 
 func (e *Error) IsAuth() bool {
 	return e.StatusCode == http.StatusUnauthorized || e.StatusCode == http.StatusForbidden
+}
+
+type RetryPolicy struct {
+	MaxAttempts int
+	BaseDelay   time.Duration
+	MaxDelay    time.Duration
 }
 
 type UnsupportedCapabilityError struct {
@@ -83,7 +104,23 @@ func NewClient(baseURL, token, email string, deployment Deployment, timeout time
 		http: &http.Client{
 			Timeout: timeout,
 		},
+		retry: RetryPolicy{
+			MaxAttempts: 3,
+			BaseDelay:   500 * time.Millisecond,
+			MaxDelay:    30 * time.Second,
+		},
+		sleep: sleepContext,
+		jitter: func(delay time.Duration) time.Duration {
+			if delay <= 1 {
+				return delay
+			}
+			return delay/2 + time.Duration(rand.Int63n(int64(delay-delay/2)))
+		},
 	}
+}
+
+func (c *Client) SetRetryPolicy(policy RetryPolicy) {
+	c.retry = policy
 }
 
 func (c *Client) ServerInfo(ctx context.Context) (*ServerInfo, error) {
@@ -156,24 +193,13 @@ func (c *Client) Myself(ctx context.Context) (*User, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = c.do(ctx, http.MethodGet, path, nil, &result)
+	err = c.doRead(ctx, http.MethodGet, path, nil, &result)
 	return &result, err
 }
 
 func (c *Client) Search(ctx context.Context, options SearchOptions) (*SearchResponse, error) {
-	if strings.TrimSpace(options.JQL) == "" {
-		return nil, errors.New("search JQL must not be empty")
-	}
-	if options.MaxResults < 1 || options.MaxResults > 1000 {
-		return nil, &ValidationError{Field: "maxResults", Message: "must be between 1 and 1000"}
-	}
-	if len(options.ReconcileIssueIDs) > 50 {
-		return nil, &ValidationError{Field: "reconcileIssues", Message: "must contain at most 50 issue IDs"}
-	}
-	for _, issueID := range options.ReconcileIssueIDs {
-		if issueID < 1 {
-			return nil, &ValidationError{Field: "reconcileIssues", Message: "issue IDs must be positive integers"}
-		}
+	if err := validateSearchOptions(options); err != nil {
+		return nil, err
 	}
 
 	deployment, err := c.Deployment(ctx)
@@ -184,6 +210,73 @@ func (c *Client) Search(ctx context.Context, options SearchOptions) (*SearchResp
 		return c.searchCloud(ctx, options)
 	}
 	return c.searchDataCenter(ctx, options)
+}
+
+func (c *Client) SearchRawJSON(ctx context.Context, options SearchOptions) (json.RawMessage, error) {
+	if err := validateSearchOptions(options); err != nil {
+		return nil, err
+	}
+	deployment, err := c.Deployment(ctx)
+	if err != nil {
+		return nil, err
+	}
+	path := ""
+	body := map[string]any{
+		"jql":        options.JQL,
+		"fields":     options.Fields,
+		"maxResults": options.MaxResults,
+	}
+	if deployment == DeploymentCloud {
+		path, err = c.PlatformPath(ctx, 3, "/search/jql")
+		if options.Cursor != "" {
+			body["nextPageToken"] = options.Cursor
+		}
+		if len(options.ReconcileIssueIDs) > 0 {
+			body["reconcileIssues"] = options.ReconcileIssueIDs
+		}
+	} else {
+		if len(options.ReconcileIssueIDs) > 0 {
+			return nil, &UnsupportedCapabilityError{
+				Capability: "search reconciliation",
+				Deployment: DeploymentDataCenter,
+			}
+		}
+		startAt := 0
+		if options.Cursor != "" {
+			startAt, err = strconv.Atoi(options.Cursor)
+			if err != nil || startAt < 0 {
+				return nil, &ValidationError{Field: "cursor", Message: "must be a non-negative Data Center offset"}
+			}
+		}
+		path, err = c.PlatformPath(ctx, 2, "/search")
+		body["startAt"] = startAt
+	}
+	if err != nil {
+		return nil, err
+	}
+	var raw json.RawMessage
+	if err := c.doRead(ctx, http.MethodPost, path, body, &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+func validateSearchOptions(options SearchOptions) error {
+	if strings.TrimSpace(options.JQL) == "" {
+		return errors.New("search JQL must not be empty")
+	}
+	if options.MaxResults < 1 || options.MaxResults > 1000 {
+		return &ValidationError{Field: "maxResults", Message: "must be between 1 and 1000"}
+	}
+	if len(options.ReconcileIssueIDs) > 50 {
+		return &ValidationError{Field: "reconcileIssues", Message: "must contain at most 50 issue IDs"}
+	}
+	for _, issueID := range options.ReconcileIssueIDs {
+		if issueID < 1 {
+			return &ValidationError{Field: "reconcileIssues", Message: "issue IDs must be positive integers"}
+		}
+	}
+	return nil
 }
 
 func (c *Client) SearchAll(ctx context.Context, options SearchOptions, limit int) (*SearchResponse, error) {
@@ -267,7 +360,7 @@ func (c *Client) searchCloud(ctx context.Context, options SearchOptions) (*Searc
 		NextPageToken string  `json:"nextPageToken"`
 		IsLast        bool    `json:"isLast"`
 	}
-	if err := c.do(ctx, http.MethodPost, path, body, &raw); err != nil {
+	if err := c.doRead(ctx, http.MethodPost, path, body, &raw); err != nil {
 		return nil, err
 	}
 	hasMore := raw.NextPageToken != "" && !raw.IsLast
@@ -318,7 +411,7 @@ func (c *Client) searchDataCenter(ctx context.Context, options SearchOptions) (*
 		Total      int     `json:"total"`
 		Issues     []Issue `json:"issues"`
 	}
-	if err := c.do(ctx, http.MethodPost, path, body, &raw); err != nil {
+	if err := c.doRead(ctx, http.MethodPost, path, body, &raw); err != nil {
 		return nil, err
 	}
 
@@ -351,8 +444,22 @@ func (c *Client) GetIssue(ctx context.Context, key, fields string) (*Issue, erro
 		return nil, err
 	}
 	var result Issue
-	err = c.do(ctx, http.MethodGet, path+"?"+q.Encode(), nil, &result)
+	err = c.doRead(ctx, http.MethodGet, path+"?"+q.Encode(), nil, &result)
 	return &result, err
+}
+
+func (c *Client) GetIssueRawJSON(ctx context.Context, key, fields string) (json.RawMessage, error) {
+	q := url.Values{}
+	q.Set("fields", fields)
+	path, err := c.PlatformPath(ctx, 2, "/issue/"+url.PathEscape(key))
+	if err != nil {
+		return nil, err
+	}
+	var raw json.RawMessage
+	if err := c.doRead(ctx, http.MethodGet, path+"?"+q.Encode(), nil, &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
 }
 
 func (c *Client) GetIssueRaw(ctx context.Context, key string) (*RawIssue, error) {
@@ -361,7 +468,7 @@ func (c *Client) GetIssueRaw(ctx context.Context, key string) (*RawIssue, error)
 		return nil, err
 	}
 	var result RawIssue
-	err = c.do(ctx, http.MethodGet, path, nil, &result)
+	err = c.doRead(ctx, http.MethodGet, path, nil, &result)
 	return &result, err
 }
 
@@ -412,7 +519,7 @@ func (c *Client) Transitions(ctx context.Context, key string) (*TransitionRespon
 		return nil, err
 	}
 	var result TransitionResponse
-	err = c.do(ctx, http.MethodGet, path, nil, &result)
+	err = c.doRead(ctx, http.MethodGet, path, nil, &result)
 	return &result, err
 }
 
@@ -435,13 +542,13 @@ func (c *Client) Fields(ctx context.Context) ([]Field, error) {
 		return nil, err
 	}
 	var result []Field
-	err = c.do(ctx, http.MethodGet, path, nil, &result)
+	err = c.doRead(ctx, http.MethodGet, path, nil, &result)
 	return result, err
 }
 
 func (c *Client) fetchServerInfo(ctx context.Context) (*ServerInfo, error) {
 	var result ServerInfo
-	err := c.do(ctx, http.MethodGet, "/rest/api/2/serverInfo", nil, &result)
+	err := c.doRead(ctx, http.MethodGet, "/rest/api/2/serverInfo", nil, &result)
 	var jiraErr *Error
 	if err != nil &&
 		(c.deploymentOverride == "" || c.deploymentOverride == DeploymentAuto) &&
@@ -449,7 +556,7 @@ func (c *Client) fetchServerInfo(ctx context.Context) (*ServerInfo, error) {
 		errors.As(err, &jiraErr) &&
 		jiraErr.IsAuth() {
 		result = ServerInfo{}
-		err = c.doWithAuth(ctx, http.MethodGet, "/rest/api/2/serverInfo", nil, &result, authBasic)
+		err = c.doReadWithAuth(ctx, http.MethodGet, "/rest/api/2/serverInfo", nil, &result, authBasic)
 	}
 	return &result, err
 }
@@ -480,6 +587,10 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 	return c.doWithAuth(ctx, method, path, body, out, c.authMode())
 }
 
+func (c *Client) doRead(ctx context.Context, method, path string, body any, out any) error {
+	return c.doReadWithAuth(ctx, method, path, body, out, c.authMode())
+}
+
 type authMode int
 
 const (
@@ -499,6 +610,72 @@ func (c *Client) authMode() authMode {
 }
 
 func (c *Client) doWithAuth(ctx context.Context, method, path string, body any, out any, mode authMode) error {
+	return c.doAttempt(ctx, method, path, body, out, mode)
+}
+
+func (c *Client) doReadWithAuth(ctx context.Context, method, path string, body any, out any, mode authMode) error {
+	attempts := c.retry.MaxAttempts
+	if attempts < 1 {
+		attempts = 1
+	}
+	for attempt := 1; attempt <= attempts; attempt++ {
+		err := c.doAttempt(ctx, method, path, body, out, mode)
+		if err == nil {
+			return nil
+		}
+
+		var jiraErr *Error
+		retryable := errors.As(err, &jiraErr) &&
+			(jiraErr.StatusCode == http.StatusTooManyRequests || retryableServerStatus(jiraErr.StatusCode))
+		if jiraErr != nil {
+			jiraErr.Attempts = attempt
+		}
+		if !retryable || attempt == attempts {
+			return err
+		}
+
+		delay := c.retryDelay(attempt, jiraErr)
+		if err := c.sleep(ctx, delay); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Client) retryDelay(attempt int, jiraErr *Error) time.Duration {
+	delay := c.retry.BaseDelay
+	for i := 1; i < attempt; i++ {
+		if c.retry.MaxDelay > 0 && delay >= c.retry.MaxDelay/2 {
+			delay = c.retry.MaxDelay
+			break
+		}
+		delay *= 2
+	}
+	if c.jitter != nil {
+		delay = c.jitter(delay)
+	}
+	if jiraErr != nil && jiraErr.RetryAfterSet && jiraErr.RetryAfter > delay {
+		delay = jiraErr.RetryAfter
+	}
+	if delay > c.retry.MaxDelay {
+		delay = c.retry.MaxDelay
+	}
+	return delay
+}
+
+func retryableServerStatus(status int) bool {
+	switch status {
+	case http.StatusInternalServerError,
+		http.StatusBadGateway,
+		http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *Client) doAttempt(ctx context.Context, method, path string, body any, out any, mode authMode) error {
 	var requestBody io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -535,15 +712,115 @@ func (c *Client) doWithAuth(ctx context.Context, method, path string, body any, 
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return &Error{
-			StatusCode: resp.StatusCode,
-			Status:     resp.Status,
-			Body:       strings.TrimSpace(string(respBody)),
+		retryAfterValue := firstNonEmptyHeader(resp.Header, "Retry-After", "Beta-Retry-After")
+		result := &Error{
+			StatusCode:    resp.StatusCode,
+			Status:        resp.Status,
+			Body:          strings.TrimSpace(string(respBody)),
+			Attempts:      1,
+			RetryAfter:    parseRetryAfter(retryAfterValue, time.Now()),
+			RetryAfterSet: retryAfterValue != "",
+			RateLimitReason: firstNonEmptyHeader(resp.Header,
+				"RateLimit-Reason", "X-RateLimit-Reason"),
+			RateLimitLimit: firstNonEmptyHeader(resp.Header,
+				"X-RateLimit-Limit", "X-Beta-RateLimit-Limit"),
+			RateLimitRemain: firstNonEmptyHeader(resp.Header,
+				"X-RateLimit-Remaining", "X-Beta-RateLimit-Remaining"),
+			RateLimitReset: firstNonEmptyHeader(resp.Header,
+				"X-RateLimit-Reset", "X-Beta-RateLimit-Reset"),
+			RateLimitNear: firstNonEmptyHeader(resp.Header,
+				"X-RateLimit-NearLimit", "X-Beta-RateLimit-NearLimit"),
 		}
+		var details struct {
+			ErrorMessages []string          `json:"errorMessages"`
+			Errors        map[string]string `json:"errors"`
+		}
+		if json.Unmarshal(respBody, &details) == nil {
+			result.ErrorMessages = c.redactStrings(details.ErrorMessages)
+			result.FieldErrors = c.redactMap(details.Errors)
+		}
+		result.Body = c.redact(result.Body)
+		return result
 	}
 
 	if out == nil || len(respBody) == 0 {
 		return nil
 	}
+	if raw, ok := out.(*json.RawMessage); ok {
+		*raw = append((*raw)[:0], respBody...)
+		return nil
+	}
 	return json.Unmarshal(respBody, out)
+}
+
+func sleepContext(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func parseRetryAfter(value string, now time.Time) time.Duration {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	if seconds, err := strconv.Atoi(value); err == nil && seconds >= 0 {
+		return time.Duration(seconds) * time.Second
+	}
+	if deadline, err := http.ParseTime(value); err == nil && deadline.After(now) {
+		return deadline.Sub(now)
+	}
+	return 0
+}
+
+func firstNonEmptyHeader(header http.Header, names ...string) string {
+	for _, name := range names {
+		if value := strings.TrimSpace(header.Get(name)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func (c *Client) redactStrings(values []string) []string {
+	result := make([]string, len(values))
+	for i, value := range values {
+		result[i] = c.redact(value)
+	}
+	return result
+}
+
+func (c *Client) redactMap(values map[string]string) map[string]string {
+	if values == nil {
+		return values
+	}
+	result := make(map[string]string, len(values))
+	for key, value := range values {
+		result[key] = c.redact(value)
+	}
+	return result
+}
+
+func (c *Client) redact(value string) string {
+	secrets := []string{c.token}
+	if c.email != "" && c.token != "" {
+		secrets = append(secrets,
+			c.email+":"+c.token,
+			base64.StdEncoding.EncodeToString([]byte(c.email+":"+c.token)),
+		)
+	}
+	for _, secret := range secrets {
+		if secret != "" {
+			value = strings.ReplaceAll(value, secret, "[REDACTED]")
+		}
+	}
+	return value
 }

@@ -13,7 +13,7 @@ Usage:
   jiractrl help [COMMAND]
 
 Read:
-  auth check                 Check Jira credentials
+  auth check [--json]        Check Jira credentials
   server-info                Detect Jira deployment and capabilities
   search --jql JQL           Search issues with JQL
   search --profile NAME      Search using a configured profile
@@ -21,8 +21,8 @@ Read:
   fields                     List Jira fields
   issue-fields ISSUE         List populated fields on one issue
   transitions ISSUE          List available workflow transitions
-  profiles list              List configured profiles
-  profiles show NAME         Show one configured profile
+  profiles list [--json]     List configured profiles
+  profiles show NAME [--json] Show one configured profile
   triage --jql JQL           Dry-run issue quality triage
 
 Write:
@@ -50,7 +50,7 @@ Environment:
   JIRA_PAT / JIRA_TOKEN      Fallback Jira token
 
 Examples:
-  jiractrl auth check
+  jiractrl auth check --json
   jiractrl search --profile my_open --json
   jiractrl get MYPROJ-123 --json
   jiractrl fields --json
@@ -62,13 +62,13 @@ func printCommandHelp(w io.Writer, command string) {
 	switch command {
 	case "auth":
 		fmt.Fprint(w, `Usage:
-  jiractrl auth check
+  jiractrl auth check [--json]
 
 Checks the configured Jira base URL and token.
 `)
 	case "search", "list":
 		fmt.Fprint(w, `Usage:
-  jiractrl search --jql 'project = MYPROJ ORDER BY updated DESC' [--max 20] [--fields summary,status] [--json]
+  jiractrl search --jql 'project = MYPROJ ORDER BY updated DESC' [--max 20] [--fields summary,status] [--json|--raw-json]
   jiractrl search --profile my_open [--json]
   jiractrl search --profile my_open --all --limit 500 [--json]
   jiractrl search --jql 'project = MYPROJ' --cursor CURSOR
@@ -81,6 +81,7 @@ Pass the opaque page.next value back through --cursor to continue a search.
 Repeat --reconcile with numeric Jira Cloud issue IDs when a search must see
 recent writes. Jira Cloud accepts at most 50 IDs. Reconciliation is not
 available on Data Center.
+--raw-json returns one exact Jira page and cannot be combined with --all.
 `)
 	case "server-info":
 		fmt.Fprint(w, `Usage:
@@ -91,9 +92,10 @@ capabilities. Set jira.deployment when automatic detection is blocked.
 `)
 	case "get":
 		fmt.Fprint(w, `Usage:
-  jiractrl get ISSUE-123 [--fields summary,description,status] [--json]
+  jiractrl get ISSUE-123 [--fields summary,description,status] [--json|--raw-json]
 
-Fetches one issue. Use --json for full structured output.
+Fetches one issue. Use --json for the stable envelope or --raw-json for the
+exact Jira response.
 `)
 	case "create":
 		fmt.Fprint(w, `Usage:
@@ -103,14 +105,14 @@ Creates a Jira issue. --project and --summary are required.
 `)
 	case "update":
 		fmt.Fprint(w, `Usage:
-  jiractrl update ISSUE-123 [--summary 'New summary'] [--description 'Body'] [--description-file body.md] [--field customfield_12345=value]
+  jiractrl update ISSUE-123 [--summary 'New summary'] [--description 'Body'] [--description-file body.md] [--field customfield_12345=value] [--json]
 
 Updates issue fields. Repeat --field for multiple raw field assignments.
 `)
 	case "comment":
 		fmt.Fprint(w, `Usage:
   jiractrl comment ISSUE-123 --body 'Comment'
-  jiractrl comment ISSUE-123 --body-file comment.md
+  jiractrl comment ISSUE-123 --body-file comment.md [--json]
 
 Adds a comment to an issue.
 `)
@@ -122,8 +124,8 @@ Lists available workflow transitions for an issue.
 `)
 	case "transition":
 		fmt.Fprint(w, `Usage:
-  jiractrl transition ISSUE-123 --to 'In Progress'
-  jiractrl transition ISSUE-123 --to 31
+  jiractrl transition ISSUE-123 --to 'In Progress' [--json]
+  jiractrl transition ISSUE-123 --to 31 [--json]
 
 Transitions an issue by transition name or ID.
 `)
@@ -141,8 +143,8 @@ Shows populated fields on one issue. Useful before writing custom fields.
 `)
 	case "profiles":
 		fmt.Fprint(w, `Usage:
-  jiractrl profiles list
-  jiractrl profiles show NAME
+  jiractrl profiles list [--json]
+  jiractrl profiles show NAME [--json]
 
 Profiles are saved JQL/default bundles in config.toml.
 `)

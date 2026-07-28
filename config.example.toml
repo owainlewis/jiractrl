@@ -11,6 +11,12 @@ deployment = "auto"
 max_results = 50
 output = "text"
 
+[retry]
+# Safe reads only. Mutations are always sent exactly once.
+max_attempts = 3
+base_delay_ms = 500
+max_delay_ms = 30000
+
 [profiles.my_open]
 jql = "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC"
 fields = ["summary", "status", "assignee", "priority", "issuetype", "created", "updated"]

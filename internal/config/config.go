@@ -14,6 +14,10 @@ const (
 	DefaultBaseURL = "https://jira.example.com"
 	DefaultFields  = "summary,status,assignee,priority,issuetype"
 	BinaryName     = "jiractrl"
+
+	DefaultRetryMaxAttempts = 3
+	DefaultRetryBaseDelay   = 500 * time.Millisecond
+	DefaultRetryMaxDelay    = 30 * time.Second
 )
 
 type Config struct {
@@ -24,7 +28,14 @@ type Config struct {
 	Timeout           time.Duration
 	DefaultMaxResults int
 	DefaultOutput     string
+	RetryMaxAttempts  int
+	RetryBaseDelay    time.Duration
+	RetryMaxDelay     time.Duration
 	Profiles          map[string]Profile
+
+	retryMaxAttemptsSet bool
+	retryBaseDelaySet   bool
+	retryMaxDelaySet    bool
 }
 
 type Profile struct {
@@ -40,6 +51,9 @@ func Load(path string, timeout time.Duration) (Config, error) {
 		Timeout:           timeout,
 		DefaultMaxResults: 20,
 		DefaultOutput:     "text",
+		RetryMaxAttempts:  DefaultRetryMaxAttempts,
+		RetryBaseDelay:    DefaultRetryBaseDelay,
+		RetryMaxDelay:     DefaultRetryMaxDelay,
 		Profiles:          map[string]Profile{},
 	}
 
@@ -66,6 +80,12 @@ func Load(path string, timeout time.Duration) (Config, error) {
 	cfg.Deployment = firstNonEmpty(os.Getenv("JIRACTRL_DEPLOYMENT"), cfg.Deployment, "auto")
 	if !validDeployment(cfg.Deployment) {
 		return Config{}, fmt.Errorf("invalid Jira deployment %q: use auto, cloud, or data_center", cfg.Deployment)
+	}
+	if cfg.RetryMaxAttempts < 1 || cfg.RetryMaxAttempts > 10 {
+		return Config{}, errors.New("retry.max_attempts must be between 1 and 10")
+	}
+	if cfg.RetryBaseDelay < 0 || cfg.RetryMaxDelay < 0 || cfg.RetryBaseDelay > cfg.RetryMaxDelay {
+		return Config{}, errors.New("retry delays must be non-negative and base_delay_ms must not exceed max_delay_ms")
 	}
 	if strings.TrimSpace(cfg.Token) == "" {
 		return Config{}, errors.New("set token in config.toml or JIRACTRL_TOKEN/JIRA_PAT")
@@ -135,6 +155,18 @@ func ReadFile(path string) (cfg Config, err error) {
 			case "output":
 				cfg.DefaultOutput = mustParseTOMLString(path, lineNo+1, value)
 			}
+		case section == "retry":
+			switch key {
+			case "max_attempts":
+				cfg.RetryMaxAttempts = mustParseTOMLInt(path, lineNo+1, value)
+				cfg.retryMaxAttemptsSet = true
+			case "base_delay_ms":
+				cfg.RetryBaseDelay = time.Duration(mustParseTOMLInt(path, lineNo+1, value)) * time.Millisecond
+				cfg.retryBaseDelaySet = true
+			case "max_delay_ms":
+				cfg.RetryMaxDelay = time.Duration(mustParseTOMLInt(path, lineNo+1, value)) * time.Millisecond
+				cfg.retryMaxDelaySet = true
+			}
 		case profileName != "":
 			p := cfg.Profiles[profileName]
 			switch key {
@@ -170,6 +202,15 @@ func Merge(base, override Config) Config {
 	}
 	if override.DefaultOutput != "" {
 		base.DefaultOutput = override.DefaultOutput
+	}
+	if override.retryMaxAttemptsSet || override.RetryMaxAttempts != 0 {
+		base.RetryMaxAttempts = override.RetryMaxAttempts
+	}
+	if override.retryBaseDelaySet || override.RetryBaseDelay != 0 {
+		base.RetryBaseDelay = override.RetryBaseDelay
+	}
+	if override.retryMaxDelaySet || override.RetryMaxDelay != 0 {
+		base.RetryMaxDelay = override.RetryMaxDelay
 	}
 	if base.Profiles == nil {
 		base.Profiles = map[string]Profile{}

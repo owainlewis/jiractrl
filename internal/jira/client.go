@@ -725,11 +725,7 @@ func (c *Client) doAttempt(ctx context.Context, method, path string, body any, o
 		return err
 	}
 
-	if mode == authBasic {
-		req.SetBasicAuth(c.email, c.token)
-	} else {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
+	c.applyAuth(req, mode)
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -747,35 +743,7 @@ func (c *Client) doAttempt(ctx context.Context, method, path string, body any, o
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		retryAfterValue := firstNonEmptyHeader(resp.Header, "Retry-After", "Beta-Retry-After")
-		result := &Error{
-			StatusCode:    resp.StatusCode,
-			Status:        resp.Status,
-			Body:          strings.TrimSpace(string(respBody)),
-			Attempts:      1,
-			RetryAfter:    parseRetryAfter(retryAfterValue, time.Now()),
-			RetryAfterSet: retryAfterValue != "",
-			RateLimitReason: firstNonEmptyHeader(resp.Header,
-				"RateLimit-Reason", "X-RateLimit-Reason"),
-			RateLimitLimit: firstNonEmptyHeader(resp.Header,
-				"X-RateLimit-Limit", "X-Beta-RateLimit-Limit"),
-			RateLimitRemain: firstNonEmptyHeader(resp.Header,
-				"X-RateLimit-Remaining", "X-Beta-RateLimit-Remaining"),
-			RateLimitReset: firstNonEmptyHeader(resp.Header,
-				"X-RateLimit-Reset", "X-Beta-RateLimit-Reset"),
-			RateLimitNear: firstNonEmptyHeader(resp.Header,
-				"X-RateLimit-NearLimit", "X-Beta-RateLimit-NearLimit"),
-		}
-		var details struct {
-			ErrorMessages []string          `json:"errorMessages"`
-			Errors        map[string]string `json:"errors"`
-		}
-		if json.Unmarshal(respBody, &details) == nil {
-			result.ErrorMessages = c.redactStrings(details.ErrorMessages)
-			result.FieldErrors = c.redactMap(details.Errors)
-		}
-		result.Body = c.redact(result.Body)
-		return result
+		return c.responseError(resp, respBody)
 	}
 
 	if out == nil || len(respBody) == 0 {
@@ -786,6 +754,46 @@ func (c *Client) doAttempt(ctx context.Context, method, path string, body any, o
 		return nil
 	}
 	return json.Unmarshal(respBody, out)
+}
+
+func (c *Client) applyAuth(req *http.Request, mode authMode) {
+	if mode == authBasic {
+		req.SetBasicAuth(c.email, c.token)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+}
+
+func (c *Client) responseError(resp *http.Response, body []byte) error {
+	retryAfterValue := firstNonEmptyHeader(resp.Header, "Retry-After", "Beta-Retry-After")
+	result := &Error{
+		StatusCode:    resp.StatusCode,
+		Status:        resp.Status,
+		Body:          strings.TrimSpace(string(body)),
+		Attempts:      1,
+		RetryAfter:    parseRetryAfter(retryAfterValue, time.Now()),
+		RetryAfterSet: retryAfterValue != "",
+		RateLimitReason: firstNonEmptyHeader(resp.Header,
+			"RateLimit-Reason", "X-RateLimit-Reason"),
+		RateLimitLimit: firstNonEmptyHeader(resp.Header,
+			"X-RateLimit-Limit", "X-Beta-RateLimit-Limit"),
+		RateLimitRemain: firstNonEmptyHeader(resp.Header,
+			"X-RateLimit-Remaining", "X-Beta-RateLimit-Remaining"),
+		RateLimitReset: firstNonEmptyHeader(resp.Header,
+			"X-RateLimit-Reset", "X-Beta-RateLimit-Reset"),
+		RateLimitNear: firstNonEmptyHeader(resp.Header,
+			"X-RateLimit-NearLimit", "X-Beta-RateLimit-NearLimit"),
+	}
+	var details struct {
+		ErrorMessages []string          `json:"errorMessages"`
+		Errors        map[string]string `json:"errors"`
+	}
+	if json.Unmarshal(body, &details) == nil {
+		result.ErrorMessages = c.redactStrings(details.ErrorMessages)
+		result.FieldErrors = c.redactMap(details.Errors)
+	}
+	result.Body = c.redact(result.Body)
+	return result
 }
 
 func sleepContext(ctx context.Context, delay time.Duration) error {

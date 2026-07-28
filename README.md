@@ -362,6 +362,51 @@ Jira Cloud discovery keeps `accountId`; Data Center discovery keeps `name` and
 guess or translate one form into another. Cloud create metadata uses the
 current project and issue-type scoped endpoints.
 
+Discover and inspect issue links:
+
+```sh
+jiractrl links types --json
+jiractrl links list MYPROJ-123 --json
+```
+
+Link direction is always explicit. For example, `--outward MYPROJ-123
+--inward MYPROJ-456` supplies the source and target sides of the Jira link:
+
+```sh
+jiractrl links add --type Blocks \
+  --outward MYPROJ-123 --inward MYPROJ-456 --json
+jiractrl links remove 10042
+```
+
+Jira reports success when an add duplicates an existing link and does not
+return a created link ID. The JSON receipt exposes both facts. List the issue
+again when the exact link ID is needed.
+
+List and transfer attachments:
+
+```sh
+jiractrl attachments list MYPROJ-123 --json
+jiractrl attachments upload MYPROJ-123 --file ./evidence.txt --json
+jiractrl attachments download 10001 --output ./downloads/evidence.txt
+jiractrl attachments remove 10001
+```
+
+Uploads stream the file as Jira's required multipart `file` field with
+`X-Atlassian-Token: no-check`. Downloads require an explicit path, reject
+parent traversal, and refuse to replace a file unless `--overwrite` is set.
+Link and attachment removals are explicit mutations and are never retried.
+
+Read issue history independently of issue expansion:
+
+```sh
+jiractrl changelog MYPROJ-123 --all --limit 500 --json
+jiractrl changelog MYPROJ-123 --field status --field assignee --json
+```
+
+`--max` controls the Jira page size. `--all` scans no more than `--limit` raw
+history records. Field filters match either Jira field names or field IDs and
+retain only matching change items.
+
 List profiles:
 
 ```sh

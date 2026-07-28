@@ -78,6 +78,12 @@ func (a App) Run(args []string) error {
 		return a.runMeta(args[1:], configPath)
 	case "users":
 		return a.runUsers(args[1:], configPath)
+	case "links":
+		return a.runLinks(args[1:], configPath)
+	case "attachments":
+		return a.runAttachments(args[1:], configPath)
+	case "changelog":
+		return a.runChangelog(args[1:], configPath)
 	case "triage":
 		return a.runTriage(args[1:], configPath)
 	case "help", "-h", "--help":

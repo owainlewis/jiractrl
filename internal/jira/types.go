@@ -276,6 +276,92 @@ type UserPage struct {
 	Page  DiscoveryPage  `json:"page"`
 }
 
+type IssueLinkType struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Inward  string `json:"inward"`
+	Outward string `json:"outward"`
+}
+
+type LinkedIssue struct {
+	ID  string `json:"id"`
+	Key string `json:"key"`
+}
+
+type IssueLink struct {
+	ID           string        `json:"id"`
+	Type         IssueLinkType `json:"type"`
+	InwardIssue  *LinkedIssue  `json:"inwardIssue,omitempty"`
+	OutwardIssue *LinkedIssue  `json:"outwardIssue,omitempty"`
+}
+
+type IssueLinkView struct {
+	ID        string        `json:"id"`
+	Type      IssueLinkType `json:"type"`
+	Direction string        `json:"direction"`
+	Relation  string        `json:"relation"`
+	Issue     LinkedIssue   `json:"issue"`
+}
+
+type LinkReceipt struct {
+	Accepted                   bool   `json:"accepted"`
+	DuplicateRequestsSucceed   bool   `json:"duplicateRequestsSucceed"`
+	ServerReturnsCreatedLinkID bool   `json:"serverReturnsCreatedLinkId"`
+	OutwardIssue               string `json:"outwardIssue"`
+	InwardIssue                string `json:"inwardIssue"`
+	Type                       string `json:"type"`
+}
+
+type Attachment struct {
+	ID       StringID     `json:"id"`
+	Filename string       `json:"filename"`
+	MimeType string       `json:"mimeType"`
+	Size     int64        `json:"size"`
+	Created  any          `json:"created,omitempty"`
+	Author   UserIdentity `json:"author"`
+	Content  string       `json:"content,omitempty"`
+}
+
+type StringID string
+
+func (id *StringID) UnmarshalJSON(data []byte) error {
+	var value string
+	if err := json.Unmarshal(data, &value); err == nil {
+		*id = StringID(value)
+		return nil
+	}
+	var number json.Number
+	if err := json.Unmarshal(data, &number); err != nil {
+		return fmt.Errorf("Jira ID must be a string or number: %w", err)
+	}
+	*id = StringID(number.String())
+	return nil
+}
+
+type ChangeItem struct {
+	Field     string `json:"field"`
+	FieldID   string `json:"fieldId,omitempty"`
+	FieldType string `json:"fieldtype,omitempty"`
+	From      string `json:"from,omitempty"`
+	FromValue string `json:"fromString,omitempty"`
+	To        string `json:"to,omitempty"`
+	ToValue   string `json:"toString,omitempty"`
+}
+
+type Changelog struct {
+	ID      string       `json:"id"`
+	Author  UserIdentity `json:"author"`
+	Created string       `json:"created"`
+	Items   []ChangeItem `json:"items"`
+}
+
+type ChangelogPage struct {
+	Histories []Changelog   `json:"histories"`
+	Page      DiscoveryPage `json:"page"`
+	Scanned   int           `json:"scanned"`
+	Fields    []string      `json:"fields,omitempty"`
+}
+
 type AmbiguousMatchError struct {
 	Value      string
 	Candidates []IssueType

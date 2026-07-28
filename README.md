@@ -523,6 +523,52 @@ result per input item. Text output includes each item's status and failure
 detail. Inspect each result before deciding whether to retry. The CLI never
 retries a whole batch or an individual write automatically.
 
+## Jira Software planning
+
+`server-info` probes the Jira Software board API. Its `software` capability is
+`available`, `unavailable`, or `unknown` when permissions prevent a reliable
+answer. Planning commands return the normal structured permission error when
+the caller cannot access Jira Software.
+
+Discover Scrum and Kanban boards:
+
+```sh
+jiractrl boards list --project MYPROJ --json
+jiractrl boards get 7 --json
+jiractrl boards issues 7 --all --limit 500 --json
+jiractrl boards backlog 7 --all --limit 500 --json
+```
+
+Inspect sprints and their ordered issues:
+
+```sh
+jiractrl sprints list 7 --state active,future --all --limit 200 --json
+jiractrl sprints get 42 --json
+jiractrl sprints issues 42 --all --limit 500 --json
+```
+
+Cloud board, backlog, and sprint issue reads use enhanced token pagination.
+Data Center uses offset pagination behind the same opaque `page.next` and
+`--cursor` contract. Board and sprint lists use `--start` offsets. `--max`
+cannot exceed 100 and `--all` never reads beyond `--limit`.
+
+Move or rank issues:
+
+```sh
+jiractrl sprints move 42 --issue MYPROJ-3 --issue MYPROJ-2 --json
+jiractrl backlog move --board 7 --issue MYPROJ-3,MYPROJ-2 --json
+jiractrl rank --issue MYPROJ-3,MYPROJ-2 --before MYPROJ-1 --json
+jiractrl estimate MYPROJ-3 --board 7 --value 8.0 --json
+```
+
+Sprint moves, backlog moves, and ranks accept at most 50 issues and preserve
+the supplied ordering. `--rank-field` selects a non-default numeric rank field.
+Board-scoped `backlog move --board` is Cloud-only; omit `--board` on Data
+Center.
+All planning writes are one-shot and are never retried. When Jira returns HTTP
+207, the command exits 1 and preserves Jira's exact partial details. With
+`--json`, that partial response is an `ok:false` envelope on stdout.
+
 List profiles:
 
 ```sh

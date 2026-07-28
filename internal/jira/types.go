@@ -29,6 +29,56 @@ type Capabilities struct {
 	ServiceManagement CapabilityStatus `json:"service_management"`
 }
 
+type SoftwareBoard struct {
+	ID       int64          `json:"id"`
+	Self     string         `json:"self,omitempty"`
+	Name     string         `json:"name"`
+	Type     string         `json:"type"`
+	Location map[string]any `json:"location,omitempty"`
+}
+
+type SoftwareBoardPage struct {
+	Boards []SoftwareBoard `json:"boards"`
+	Page   DiscoveryPage   `json:"page"`
+}
+
+type SoftwareSprint struct {
+	ID            int64  `json:"id"`
+	Self          string `json:"self,omitempty"`
+	State         string `json:"state"`
+	Name          string `json:"name"`
+	StartDate     string `json:"startDate,omitempty"`
+	EndDate       string `json:"endDate,omitempty"`
+	CompleteDate  string `json:"completeDate,omitempty"`
+	OriginBoardID int64  `json:"originBoardId,omitempty"`
+	Goal          string `json:"goal,omitempty"`
+}
+
+type SoftwareSprintPage struct {
+	Sprints []SoftwareSprint `json:"sprints"`
+	Page    DiscoveryPage    `json:"page"`
+}
+
+type SoftwareIssueOptions struct {
+	MaxResults int
+	Cursor     string
+	JQL        string
+	Fields     []string
+}
+
+type SoftwareIssuePage struct {
+	Issues []RawIssue `json:"issues"`
+	Page   SearchPage `json:"page"`
+}
+
+type SoftwareWriteReceipt struct {
+	Operation string          `json:"operation"`
+	Issues    []string        `json:"issues"`
+	Accepted  bool            `json:"accepted"`
+	Partial   bool            `json:"partial"`
+	Details   json.RawMessage `json:"details,omitempty"`
+}
+
 type ServerInfo struct {
 	BaseURL          string       `json:"baseUrl"`
 	Version          string       `json:"version"`

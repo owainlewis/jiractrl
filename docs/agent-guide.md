@@ -156,6 +156,45 @@ exits 1. With `--json`, it returns `ok:false` plus all exact item results on
 stdout. Never retry the full input. Inspect Jira and build a new input
 containing only writes known to be safe.
 
+### Inspect and change Jira Software planning
+
+Check capability and discover board IDs before planning:
+
+```sh
+jiractrl server-info --json
+jiractrl boards list --project MYPROJ --json
+jiractrl boards get 7 --json
+```
+
+Read bounded board, backlog, and sprint context:
+
+```sh
+jiractrl boards issues 7 --all --limit 500 --json
+jiractrl boards backlog 7 --all --limit 500 --json
+jiractrl sprints list 7 --state active,future --all --limit 200 --json
+jiractrl sprints issues 42 --all --limit 500 --json
+```
+
+Always pass `page.next` back unchanged through `--cursor`. Cloud issue reads
+use token pagination; Data Center uses offsets behind the same contract.
+Board and sprint list continuation uses `--start`. Hard limits cap all
+multi-page reads.
+
+Move, rank, or estimate only with explicit intent:
+
+```sh
+jiractrl sprints move 42 --issue MYPROJ-3,MYPROJ-2 --json
+jiractrl backlog move --board 7 --issue MYPROJ-3,MYPROJ-2 --json
+jiractrl rank --issue MYPROJ-3,MYPROJ-2 --after MYPROJ-1 --json
+jiractrl estimate MYPROJ-3 --board 7 --value 8.0 --json
+```
+
+Moves and ranks accept at most 50 issues and preserve input order. These writes
+are never retried. Board-scoped `backlog move --board` is Cloud-only; omit the
+board on Data Center. HTTP 207 means Jira completed only part of the request;
+the command exits 1 and returns exact details. Inspect the affected issues
+before constructing any follow-up write.
+
 Assign with the identity form returned by the current deployment:
 
 ```sh

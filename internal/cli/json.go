@@ -194,7 +194,7 @@ func wantsJSON(args []string) bool {
 		return false
 	}
 	command := commandName(args)
-	return command == "create" || command == "update" || command == "transition"
+	return command == "create" || command == "update" || command == "transition" || command == "bulk"
 }
 
 func commandName(args []string) string {

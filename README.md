@@ -473,6 +473,56 @@ removing another user may require Jira's Manage watcher list permission.
 Privacy and permission failures use the normal structured JSON error contract.
 Watcher mutations are never retried.
 
+## Bounded bulk writes
+
+Run create, update, or transition inputs from a JSON array or JSONL file:
+
+```sh
+jiractrl bulk create --input creates.jsonl --json
+jiractrl bulk update --input updates.json --dry-run
+jiractrl bulk transition --input transitions.jsonl --max-items 100 --json
+```
+
+Create items use the same payload as `create --input`. Update and transition
+items add an `issue` key:
+
+```json
+[
+  {
+    "identity": "sync-42",
+    "issue": "MYPROJ-123",
+    "fields": {"summary": "Updated by sync"}
+  },
+  {
+    "identity": "sync-43",
+    "issue": "MYPROJ-124",
+    "fields": {"summary": "Another update"}
+  }
+]
+```
+
+`identity` is optional and is copied unchanged into the matching result. If it
+is omitted, the command assigns `item-0`, `item-1`, and so on. Results always
+remain in input order.
+
+The command validates the entire input before sending a mutation. It accepts
+50 items by default; `--max-items` can raise or lower that local limit but
+cannot exceed the compiled ceiling of 1000. Inputs larger than the selected
+limit are rejected, not truncated. `--dry-run` plans every item and sends no
+mutation.
+
+Bulk writes use Jira's single-issue endpoints sequentially, so no server bulk
+limit or hidden server chunking applies. An ordinary Jira 4xx response fails
+that item and processing continues. A transport failure, timeout response,
+HTTP 429, or Jira 5xx stops processing because the last mutation may have
+completed. Every remaining item is returned as `skipped`.
+
+A mixed or stopped batch exits 1. With `--json`, it writes one object to stdout
+with `ok:false`, `error.kind:"partial_failure"`, summary counts, and one exact
+result per input item. Text output includes each item's status and failure
+detail. Inspect each result before deciding whether to retry. The CLI never
+retries a whole batch or an individual write automatically.
+
 List profiles:
 
 ```sh

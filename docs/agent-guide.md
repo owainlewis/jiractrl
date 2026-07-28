@@ -51,6 +51,7 @@ jiractrl get MYPROJ-123 --json
 jiractrl fields --json
 jiractrl issue-fields MYPROJ-123 --json
 jiractrl transitions MYPROJ-123 --json
+jiractrl comments list MYPROJ-123 --all --limit 500 --json
 jiractrl triage --jql 'project = MYPROJ AND statusCategory != Done' --json
 ```
 
@@ -61,7 +62,7 @@ message text. Rate limits use `rate_limited` and exit 6. Conflicts use
 
 Safe reads retry bounded 429 and retryable 5xx responses. Mutations are never
 retried automatically, so an agent should inspect Jira before deciding whether
-to repeat a failed create, update, comment, or transition.
+to repeat a failed create, update, comment add/update/remove, or transition.
 
 Use `get --raw-json` or single-page `search --raw-json` only when exact Jira
 response fields are required. Raw output is intentionally not wrapped.
@@ -114,7 +115,7 @@ interchangeable.
 jiractrl create --project MYPROJ --type Task --summary "Short summary" --description "Details" --json
 jiractrl update MYPROJ-123 --summary "Updated summary"
 jiractrl update MYPROJ-123 --field customfield_12345=value
-jiractrl comment MYPROJ-123 --body "Follow-up context."
+jiractrl comments add MYPROJ-123 --body "Follow-up context."
 jiractrl transition MYPROJ-123 --to "In Progress"
 ```
 
@@ -172,10 +173,36 @@ Do not infer custom field IDs from display names unless `fields --json` confirms
 
 ### Comment on an issue from a generated note
 
+Read comments through the dedicated paged endpoint. Do not rely on the partial
+comment field returned by an issue read:
+
+```sh
+jiractrl comments list MYPROJ-123 --all --limit 500 --json
+```
+
 Prefer a file for longer generated comments:
 
 ```sh
-jiractrl comment MYPROJ-123 --body-file comment.md
+jiractrl comments add MYPROJ-123 --body-file comment.md
+```
+
+On Cloud, body text supports headings, paragraphs, ordered and unordered
+lists, links, fenced code, inline code, bold, and italic Markdown and is
+converted to ADF. Data Center receives a string. For exact Cloud ADF, supply
+`{"body":{...}}` with `--input FILE|-`.
+
+Restrict a comment when explicitly requested:
+
+```sh
+jiractrl comments add MYPROJ-123 --body-file comment.md \
+  --visibility-type role --visibility-value Developers
+```
+
+Updating and removing comments are distinct writes:
+
+```sh
+jiractrl comments update MYPROJ-123 10042 --body-file corrected.md
+jiractrl comments remove MYPROJ-123 10042
 ```
 
 ### Move an issue through workflow

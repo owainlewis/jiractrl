@@ -60,6 +60,8 @@ func (a App) Run(args []string) error {
 		return a.runUpdate(args[1:], configPath)
 	case "comment":
 		return a.runComment(args[1:], configPath)
+	case "comments":
+		return a.runComments(args[1:], configPath)
 	case "transitions":
 		return a.runTransitions(args[1:], configPath)
 	case "transition":
@@ -484,38 +486,7 @@ func (a App) runUpdate(args []string, configPath string) error {
 }
 
 func (a App) runComment(args []string, configPath string) error {
-	fs := newFlagSet("comment")
-	body := fs.String("body", "", "comment body")
-	bodyFile := fs.String("body-file", "", "path to comment body file")
-	rawJSON := fs.Bool("json", false, "print JSON response")
-
-	if err := fs.Parse(flagsBeforeLeadingPositional(args)); err != nil {
-		return errors.New("usage: jiractrl comment ISSUE-123 --body '...'")
-	}
-	if fs.NArg() != 1 || strings.TrimSpace(fs.Arg(0)) == "" {
-		return errors.New("usage: jiractrl comment ISSUE-123 --body '...'")
-	}
-	comment, err := readInlineOrFile(*body, *bodyFile)
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(comment) == "" {
-		return errors.New("missing required --body or --body-file")
-	}
-
-	client, err := a.client(configPath, 30*time.Second)
-	if err != nil {
-		return err
-	}
-	result, err := client.AddComment(context.Background(), fs.Arg(0), comment)
-	if err != nil {
-		return err
-	}
-	if *rawJSON {
-		return writeSuccessJSON(a.Stdout, result)
-	}
-	fmt.Fprintf(a.Stdout, "Commented on %s\n", fs.Arg(0))
-	return nil
+	return a.runComments(append([]string{"add"}, args...), configPath)
 }
 
 func (a App) runTransitions(args []string, configPath string) error {

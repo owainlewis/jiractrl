@@ -101,8 +101,8 @@ as fallbacks.
 
 Safe reads retry HTTP 429, 500, 502, 503, and 504 responses within the
 configured attempt and delay budgets. Jira's `Retry-After` header is honored
-up to `max_delay_ms`. Create, update, comment, and transition requests are
-never retried automatically.
+up to `max_delay_ms`. Create, update, comment add/update/remove, and transition
+requests are never retried automatically.
 
 ## JSON contract
 
@@ -272,10 +272,47 @@ Update an issue:
 jiractrl update MYPROJ-123 --summary "Updated summary"
 ```
 
-Comment:
+List comments independently of the partial comment field returned by issue
+reads:
 
 ```sh
-jiractrl comment MYPROJ-123 --body "Adding follow-up context."
+jiractrl comments list MYPROJ-123 --all --limit 500 --json
+```
+
+Add, update, or remove a comment:
+
+```sh
+jiractrl comments add MYPROJ-123 --body "Adding **important** context."
+jiractrl comments update MYPROJ-123 10042 --body-file corrected.md
+jiractrl comments remove MYPROJ-123 10042
+```
+
+`jiractrl comment ISSUE --body TEXT` remains an alias for `comments add`.
+On Jira Cloud, convenience bodies convert a documented Markdown subset to
+ADF: headings, paragraphs, ordered and unordered lists, links, fenced code
+blocks, inline code, bold, and italic. Data Center sends string bodies.
+
+Use structured input to preserve an exact Cloud ADF document and optional
+visibility restriction:
+
+```json
+{
+  "body": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [{"type": "text", "text": "Restricted context"}]
+      }
+    ]
+  },
+  "visibility": {"type": "role", "value": "Developers"}
+}
+```
+
+```sh
+jiractrl comments add MYPROJ-123 --input comment.json --json
 ```
 
 List transitions:

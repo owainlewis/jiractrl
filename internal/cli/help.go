@@ -29,12 +29,16 @@ Read:
   meta create                Inspect create fields and allowed values
   meta edit ISSUE            Inspect editable fields
   users assignable           Find valid assignees
+  comments list ISSUE        Page through all issue comments
   triage --jql JQL           Dry-run issue quality triage
 
 Write:
   create (--project KEY --summary TEXT | --input FILE|-)
   update ISSUE [--summary TEXT | --input FILE|-]
-  comment ISSUE --body TEXT
+  comments add ISSUE (--body TEXT | --input FILE|-)
+  comments update ISSUE ID (--body TEXT | --input FILE|-)
+  comments remove ISSUE ID
+  comment ISSUE --body TEXT  Alias for comments add
   transition ISSUE (--to NAME_OR_ID | --input FILE|-)
 
 Global flags:
@@ -128,7 +132,21 @@ Do not combine --input with convenience flags. --dry-run does not mutate Jira.
   jiractrl comment ISSUE-123 --body 'Comment'
   jiractrl comment ISSUE-123 --body-file comment.md [--json]
 
-Adds a comment to an issue.
+Alias for comments add.
+`)
+	case "comments":
+		fmt.Fprint(w, `Usage:
+  jiractrl comments list ISSUE [--start N] [--max 50] [--all --limit 1000] [--json]
+  jiractrl comments add ISSUE (--body TEXT|--body-file FILE|--input FILE|-) [--visibility-type role|group --visibility-value VALUE] [--json]
+  jiractrl comments update ISSUE COMMENT_ID (--body TEXT|--body-file FILE|--input FILE|-) [--visibility-type role|group --visibility-value VALUE] [--json]
+  jiractrl comments remove ISSUE COMMENT_ID [--json]
+
+Cloud convenience bodies support headings, paragraphs, ordered and unordered
+lists, links, fenced code blocks, inline code, bold, and italic Markdown. They
+are converted to ADF. Data Center bodies remain strings. Structured input
+accepts body plus optional visibility; use it to supply exact Cloud ADF.
+Comment listing is independently paged. --all follows pages only up to --limit.
+The legacy comment command is an alias for comments add.
 `)
 	case "transitions":
 		fmt.Fprint(w, `Usage:

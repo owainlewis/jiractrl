@@ -56,6 +56,8 @@ jiractrl links types --json
 jiractrl links list MYPROJ-123 --json
 jiractrl attachments list MYPROJ-123 --json
 jiractrl changelog MYPROJ-123 --all --limit 500 --json
+jiractrl worklogs list MYPROJ-123 --all --limit 500 --json
+jiractrl watchers list MYPROJ-123 --json
 jiractrl triage --jql 'project = MYPROJ AND statusCategory != Done' --json
 ```
 
@@ -282,6 +284,39 @@ requested:
 ```sh
 jiractrl attachments remove 10001
 ```
+
+### Log work and manage watchers
+
+Read worklogs with a hard budget:
+
+```sh
+jiractrl worklogs list MYPROJ-123 --all --limit 500 --json
+```
+
+Add or correct work using positive Jira duration units:
+
+```sh
+jiractrl worklogs add MYPROJ-123 --time-spent "1h 30m" \
+  --started 2026-07-28T12:30:00Z --comment "Completed validation" \
+  --adjust leave --json
+jiractrl worklogs update MYPROJ-123 10010 --time-spent 2h --json
+```
+
+Cloud comments become ADF; Data Center comments stay strings. Duration, start
+time, and estimate-adjustment combinations are checked before mutation.
+
+Use native watcher identities:
+
+```sh
+jiractrl watchers list MYPROJ-123 --json
+jiractrl watchers add MYPROJ-123 --self
+jiractrl watchers add MYPROJ-123 --account-id ACCOUNT_ID  # Cloud
+jiractrl watchers remove MYPROJ-123 --user username       # Data Center
+```
+
+Changing another user's watch state can require extra Jira permission. Treat
+403 privacy or permission errors as failures. Worklog and watcher mutations
+are one-shot and must not be repeated without inspecting Jira.
 
 ### Move an issue through workflow
 

@@ -86,6 +86,10 @@ func (a App) Run(args []string) error {
 		return a.runAttachments(args[1:], configPath)
 	case "changelog":
 		return a.runChangelog(args[1:], configPath)
+	case "worklogs":
+		return a.runWorklogs(args[1:], configPath)
+	case "watchers":
+		return a.runWatchers(args[1:], configPath)
 	case "triage":
 		return a.runTriage(args[1:], configPath)
 	case "help", "-h", "--help":

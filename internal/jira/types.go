@@ -42,6 +42,7 @@ type ServerInfo struct {
 }
 
 type User struct {
+	AccountID    string `json:"accountId"`
 	Key          string `json:"key"`
 	Name         string `json:"name"`
 	DisplayName  string `json:"displayName"`
@@ -283,6 +284,39 @@ type AssignmentReceipt struct {
 	User       string     `json:"user,omitempty"`
 	Unassigned bool       `json:"unassigned"`
 	Assigned   bool       `json:"assigned"`
+}
+
+type Worklog struct {
+	ID               string             `json:"id"`
+	Author           UserIdentity       `json:"author"`
+	UpdateAuthor     UserIdentity       `json:"updateAuthor"`
+	Comment          RichText           `json:"comment"`
+	Started          string             `json:"started"`
+	Created          string             `json:"created"`
+	Updated          string             `json:"updated"`
+	TimeSpent        string             `json:"timeSpent"`
+	TimeSpentSeconds int64              `json:"timeSpentSeconds"`
+	Visibility       *CommentVisibility `json:"visibility,omitempty"`
+}
+
+type WorklogPage struct {
+	Worklogs []Worklog     `json:"worklogs"`
+	Page     DiscoveryPage `json:"page"`
+}
+
+type Watchers struct {
+	IsWatching bool           `json:"isWatching"`
+	WatchCount int            `json:"watchCount"`
+	Watchers   []UserIdentity `json:"watchers"`
+}
+
+type WatcherReceipt struct {
+	Issue      string     `json:"issue"`
+	Deployment Deployment `json:"deployment"`
+	AccountID  string     `json:"accountId,omitempty"`
+	User       string     `json:"user,omitempty"`
+	Self       bool       `json:"self"`
+	Watching   bool       `json:"watching"`
 }
 
 type AmbiguousUserError struct {

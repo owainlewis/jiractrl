@@ -1,6 +1,11 @@
 [jira]
 base_url = "https://jira.example.com"
 token = "your-personal-access-token"
+# Detect Jira Cloud or Data Center from serverInfo. Set this explicitly when
+# that endpoint is blocked: "cloud" or "data_center".
+deployment = "auto"
+# For Jira Cloud, set email and use a Cloud API token as the token above.
+# email = "you@example.com"
 
 [defaults]
 max_results = 50

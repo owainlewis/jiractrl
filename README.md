@@ -56,6 +56,9 @@ Example:
 [jira]
 base_url = "https://jira.example.com"
 token = "your-personal-access-token"
+deployment = "auto"
+# For Jira Cloud, set email and use an API token:
+# email = "you@example.com"
 
 [defaults]
 max_results = 50
@@ -84,7 +87,11 @@ export JIRACTRL_BASE_URL="https://jira.example.com"
 export JIRACTRL_TOKEN="your-personal-access-token"
 ```
 
-`JIRA_BASE_URL`, `JIRA_PAT`, and `JIRA_TOKEN` are also supported as fallbacks.
+Set `JIRACTRL_DEPLOYMENT` to `cloud` or `data_center` when Jira's
+`serverInfo` endpoint is unavailable. The default is `auto`.
+
+`JIRA_BASE_URL`, `JIRA_PAT`, `JIRA_TOKEN`, and `JIRA_EMAIL` are also supported
+as fallbacks.
 
 ## Commands
 
@@ -99,6 +106,12 @@ Check auth:
 
 ```sh
 jiractrl auth check
+```
+
+Inspect the detected deployment and known capabilities:
+
+```sh
+jiractrl server-info --json
 ```
 
 Search with JQL:

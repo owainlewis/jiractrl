@@ -40,6 +40,8 @@ func (a App) Run(args []string) error {
 	switch args[0] {
 	case "auth":
 		return a.runAuth(args[1:], configPath)
+	case "server-info":
+		return a.runServerInfo(args[1:], configPath)
 	case "search", "list":
 		return a.runSearch(args[1:], configPath)
 	case "get":
@@ -73,6 +75,39 @@ func (a App) Run(args []string) error {
 		printUsage(a.Stderr)
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+func (a App) runServerInfo(args []string, configPath string) error {
+	fs := newFlagSet("server-info")
+	rawJSON := fs.Bool("json", false, "print JSON response")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
+		return errors.New("usage: jiractrl server-info [--json]")
+	}
+
+	client, err := a.client(configPath, 15*time.Second)
+	if err != nil {
+		return err
+	}
+	info, err := client.ServerInfo(context.Background())
+	if err != nil {
+		return err
+	}
+	if *rawJSON {
+		return writeJSON(a.Stdout, info)
+	}
+
+	fmt.Fprintf(a.Stdout, "Deployment: %s (%s)\n", info.Deployment, info.DeploymentSource)
+	if info.Version != "" {
+		fmt.Fprintf(a.Stdout, "Version: %s\n", info.Version)
+	}
+	if info.BaseURL != "" {
+		fmt.Fprintf(a.Stdout, "Base URL: %s\n", info.BaseURL)
+	}
+	fmt.Fprintln(a.Stdout, "Capabilities:")
+	fmt.Fprintf(a.Stdout, "  platform: %s\n", info.Capabilities.Platform)
+	fmt.Fprintf(a.Stdout, "  software: %s\n", info.Capabilities.Software)
+	fmt.Fprintf(a.Stdout, "  service_management: %s\n", info.Capabilities.ServiceManagement)
+	return nil
 }
 
 func parseGlobalFlags(args []string, configPath *string) ([]string, error) {
@@ -165,7 +200,10 @@ func (a App) runSearch(args []string, configPath string) error {
 		return errors.New("--max must be between 1 and 1000")
 	}
 
-	client := jira.NewClient(cfg.BaseURL, cfg.Token, cfg.Timeout)
+	client, err := newJiraClient(cfg)
+	if err != nil {
+		return err
+	}
 	if *withDescription {
 		selectedFields = addField(selectedFields, "description")
 	}
@@ -527,7 +565,15 @@ func (a App) client(configPath string, timeout time.Duration) (*jira.Client, err
 	if err != nil {
 		return nil, err
 	}
-	return jira.NewClient(cfg.BaseURL, cfg.Token, cfg.Timeout), nil
+	return newJiraClient(cfg)
+}
+
+func newJiraClient(cfg config.Config) (*jira.Client, error) {
+	deployment, err := jira.ParseDeployment(cfg.Deployment)
+	if err != nil {
+		return nil, err
+	}
+	return jira.NewClient(cfg.BaseURL, cfg.Token, cfg.Email, deployment, cfg.Timeout), nil
 }
 
 func newFlagSet(name string) *flag.FlagSet {

@@ -13,12 +13,17 @@ func TestLoadConfigWithProfiles(t *testing.T) {
 	t.Setenv("JIRA_BASE_URL", "")
 	t.Setenv("JIRA_PAT", "")
 	t.Setenv("JIRA_TOKEN", "")
+	t.Setenv("JIRACTRL_EMAIL", "")
+	t.Setenv("JIRA_EMAIL", "")
+	t.Setenv("JIRACTRL_DEPLOYMENT", "")
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 	config := `[jira]
 base_url = "https://jira.example.com"
 token = "secret"
+email = "agent@example.com"
+deployment = "data_center"
 
 [defaults]
 max_results = 25
@@ -44,6 +49,12 @@ max_results = 10
 	if cfg.Token != "secret" {
 		t.Fatalf("Token = %q", cfg.Token)
 	}
+	if cfg.Email != "agent@example.com" {
+		t.Fatalf("Email = %q", cfg.Email)
+	}
+	if cfg.Deployment != "data_center" {
+		t.Fatalf("Deployment = %q", cfg.Deployment)
+	}
 	if cfg.DefaultMaxResults != 25 {
 		t.Fatalf("DefaultMaxResults = %d", cfg.DefaultMaxResults)
 	}
@@ -56,5 +67,13 @@ max_results = 10
 	}
 	if len(p.Fields) != 3 || p.Fields[2] != "updated" {
 		t.Fatalf("profile Fields = %#v", p.Fields)
+	}
+}
+
+func TestLoadRejectsInvalidDeploymentOverride(t *testing.T) {
+	t.Setenv("JIRACTRL_TOKEN", "secret")
+	t.Setenv("JIRACTRL_DEPLOYMENT", "hosted")
+	if _, err := Load(filepath.Join(t.TempDir(), "missing.toml"), time.Second); err == nil {
+		t.Fatal("expected invalid deployment error")
 	}
 }

@@ -19,6 +19,8 @@ const (
 type Config struct {
 	BaseURL           string
 	Token             string
+	Email             string
+	Deployment        string
 	Timeout           time.Duration
 	DefaultMaxResults int
 	DefaultOutput     string
@@ -34,6 +36,7 @@ type Profile struct {
 func Load(path string, timeout time.Duration) (Config, error) {
 	cfg := Config{
 		BaseURL:           DefaultBaseURL,
+		Deployment:        "auto",
 		Timeout:           timeout,
 		DefaultMaxResults: 20,
 		DefaultOutput:     "text",
@@ -59,6 +62,11 @@ func Load(path string, timeout time.Duration) (Config, error) {
 
 	cfg.BaseURL = strings.TrimRight(firstNonEmpty(os.Getenv("JIRACTRL_BASE_URL"), os.Getenv("JIRA_BASE_URL"), cfg.BaseURL), "/")
 	cfg.Token = firstNonEmpty(os.Getenv("JIRACTRL_TOKEN"), os.Getenv("JIRA_PAT"), os.Getenv("JIRA_TOKEN"), cfg.Token)
+	cfg.Email = firstNonEmpty(os.Getenv("JIRACTRL_EMAIL"), os.Getenv("JIRA_EMAIL"), cfg.Email)
+	cfg.Deployment = firstNonEmpty(os.Getenv("JIRACTRL_DEPLOYMENT"), cfg.Deployment, "auto")
+	if !validDeployment(cfg.Deployment) {
+		return Config{}, fmt.Errorf("invalid Jira deployment %q: use auto, cloud, or data_center", cfg.Deployment)
+	}
 	if strings.TrimSpace(cfg.Token) == "" {
 		return Config{}, errors.New("set token in config.toml or JIRACTRL_TOKEN/JIRA_PAT")
 	}
@@ -115,6 +123,10 @@ func ReadFile(path string) (cfg Config, err error) {
 				cfg.BaseURL = mustParseTOMLString(path, lineNo+1, value)
 			case "token":
 				cfg.Token = mustParseTOMLString(path, lineNo+1, value)
+			case "email":
+				cfg.Email = mustParseTOMLString(path, lineNo+1, value)
+			case "deployment":
+				cfg.Deployment = mustParseTOMLString(path, lineNo+1, value)
 			}
 		case section == "defaults":
 			switch key {
@@ -147,6 +159,12 @@ func Merge(base, override Config) Config {
 	if override.Token != "" {
 		base.Token = override.Token
 	}
+	if override.Email != "" {
+		base.Email = override.Email
+	}
+	if override.Deployment != "" {
+		base.Deployment = override.Deployment
+	}
 	if override.DefaultMaxResults != 0 {
 		base.DefaultMaxResults = override.DefaultMaxResults
 	}
@@ -160,6 +178,15 @@ func Merge(base, override Config) Config {
 		base.Profiles[name] = p
 	}
 	return base
+}
+
+func validDeployment(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "auto", "cloud", "data_center":
+		return true
+	default:
+		return false
+	}
 }
 
 func stripTOMLComment(line string) string {

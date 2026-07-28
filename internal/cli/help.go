@@ -14,6 +14,7 @@ Usage:
 
 Read:
   auth check                 Check Jira credentials
+  server-info                Detect Jira deployment and capabilities
   search --jql JQL           Search issues with JQL
   search --profile NAME      Search using a configured profile
   get ISSUE                  Fetch one issue
@@ -43,6 +44,8 @@ Environment:
   JIRACTRL_CONFIG            Optional config path
   JIRACTRL_BASE_URL          Jira base URL
   JIRACTRL_TOKEN             Jira personal access token
+  JIRACTRL_EMAIL             Jira Cloud account email (enables Basic auth)
+  JIRACTRL_DEPLOYMENT        auto, cloud, or data_center
   JIRA_BASE_URL              Fallback Jira base URL
   JIRA_PAT / JIRA_TOKEN      Fallback Jira token
 
@@ -69,6 +72,13 @@ Checks the configured Jira base URL and token.
   jiractrl search --profile my_open [--json]
 
 Use --json for agent workflows. Profiles come from config.toml.
+`)
+	case "server-info":
+		fmt.Fprint(w, `Usage:
+  jiractrl server-info [--json]
+
+Reports the detected or configured Jira deployment and known product
+capabilities. Set jira.deployment when automatic detection is blocked.
 `)
 	case "get":
 		fmt.Fprint(w, `Usage:

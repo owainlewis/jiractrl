@@ -22,6 +22,9 @@ Minimal config:
 [jira]
 base_url = "https://jira.example.com"
 token = "your-personal-access-token"
+deployment = "auto"
+# Jira Cloud only:
+# email = "you@example.com"
 
 [profiles.my_open]
 jql = "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC"
@@ -29,12 +32,18 @@ fields = ["summary", "status", "assignee", "priority", "issuetype", "created", "
 max_results = 50
 ```
 
+`deployment = "auto"` calls Jira's `serverInfo` endpoint before other
+operations. Set it to `cloud` or `data_center` when that endpoint is blocked.
+Use `jiractrl server-info --json` to inspect the selected deployment and known
+product capabilities.
+
 ## Read Operations
 
 Read operations do not mutate Jira.
 
 ```sh
 jiractrl auth check
+jiractrl server-info --json
 jiractrl profiles list
 jiractrl profiles show my_open
 jiractrl search --profile my_open --json

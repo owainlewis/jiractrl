@@ -29,6 +29,7 @@ type contractError struct {
 	ErrorMessages []string          `json:"errorMessages,omitempty"`
 	Fields        map[string]string `json:"fields,omitempty"`
 	Retry         *retryMetadata    `json:"retry,omitempty"`
+	Candidates    any               `json:"candidates,omitempty"`
 }
 
 type retryMetadata struct {
@@ -107,6 +108,12 @@ func classifyError(err error) contractError {
 	if errors.As(err, &validation) {
 		result.Kind = "validation"
 		result.Fields = map[string]string{validation.Field: validation.Message}
+		return result
+	}
+	var ambiguous *jira.AmbiguousMatchError
+	if errors.As(err, &ambiguous) {
+		result.Kind = "ambiguous"
+		result.Candidates = ambiguous.Candidates
 		return result
 	}
 	var jiraErr *jira.Error

@@ -3,6 +3,7 @@ package jira
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -195,4 +196,78 @@ type Field struct {
 	Custom      bool     `json:"custom"`
 	Order       int      `json:"orderable,omitempty"`
 	ClauseNames []string `json:"clauseNames,omitempty"`
+}
+
+type DiscoveryPage struct {
+	StartAt    int  `json:"startAt"`
+	MaxResults int  `json:"maxResults"`
+	Returned   int  `json:"returned"`
+	Total      *int `json:"total,omitempty"`
+	Next       int  `json:"next,omitempty"`
+	HasMore    bool `json:"hasMore"`
+}
+
+type Project struct {
+	ID         string      `json:"id"`
+	Key        string      `json:"key"`
+	Name       string      `json:"name"`
+	IssueTypes []IssueType `json:"issueTypes,omitempty"`
+}
+
+type ProjectPage struct {
+	Projects []Project     `json:"projects"`
+	Page     DiscoveryPage `json:"page"`
+}
+
+type IssueType struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Subtask     bool   `json:"subtask"`
+}
+
+type IssueTypePage struct {
+	IssueTypes []IssueType   `json:"issueTypes"`
+	Page       DiscoveryPage `json:"page"`
+}
+
+type FieldMetadata struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Required        bool   `json:"required"`
+	Schema          any    `json:"schema,omitempty"`
+	HasDefaultValue bool   `json:"hasDefaultValue"`
+	DefaultValue    any    `json:"defaultValue"`
+	AllowedValues   []any  `json:"allowedValues"`
+}
+
+type MetadataResponse struct {
+	Project   *Project        `json:"project,omitempty"`
+	IssueType *IssueType      `json:"issueType,omitempty"`
+	Issue     string          `json:"issue,omitempty"`
+	Fields    []FieldMetadata `json:"fields"`
+	Page      DiscoveryPage   `json:"page"`
+}
+
+type UserIdentity struct {
+	AccountID    string `json:"accountId,omitempty"`
+	Key          string `json:"key,omitempty"`
+	Name         string `json:"name,omitempty"`
+	DisplayName  string `json:"displayName"`
+	EmailAddress string `json:"emailAddress,omitempty"`
+	Active       bool   `json:"active"`
+}
+
+type UserPage struct {
+	Users []UserIdentity `json:"users"`
+	Page  DiscoveryPage  `json:"page"`
+}
+
+type AmbiguousMatchError struct {
+	Value      string
+	Candidates []IssueType
+}
+
+func (e *AmbiguousMatchError) Error() string {
+	return fmt.Sprintf("issue type %q is ambiguous; use an ID", e.Value)
 }

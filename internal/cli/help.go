@@ -23,6 +23,12 @@ Read:
   transitions ISSUE          List available workflow transitions
   profiles list [--json]     List configured profiles
   profiles show NAME [--json] Show one configured profile
+  projects list              Page through visible projects
+  projects get KEY           Look up one project
+  projects issue-types KEY   List valid issue types
+  meta create                Inspect create fields and allowed values
+  meta edit ISSUE            Inspect editable fields
+  users assignable           Find valid assignees
   triage --jql JQL           Dry-run issue quality triage
 
 Write:
@@ -159,6 +165,31 @@ Shows populated fields on one issue. Useful before writing custom fields.
   jiractrl profiles show NAME [--json]
 
 Profiles are saved JQL/default bundles in config.toml.
+`)
+	case "projects":
+		fmt.Fprint(w, `Usage:
+  jiractrl projects list [--query TEXT] [--start N] [--max 50] [--json]
+  jiractrl projects get KEY [--json]
+  jiractrl projects issue-types KEY [--start N] [--max 50] [--json]
+
+Discovers visible projects and valid issue types. JSON pages include
+startAt, maxResults, returned, total when Jira supplies it, next, and hasMore.
+`)
+	case "meta":
+		fmt.Fprint(w, `Usage:
+  jiractrl meta create --project KEY --type ID_OR_NAME [--start N] [--max 50] [--json]
+  jiractrl meta edit ISSUE [--json]
+
+Returns field IDs, names, required flags, schemas, defaults, and allowed
+values. Duplicate issue-type names return candidates; pass the issue-type ID.
+`)
+	case "users":
+		fmt.Fprint(w, `Usage:
+  jiractrl users assignable --project KEY [--query TEXT] [--start N] [--max 50] [--json]
+  jiractrl users assignable --issue ISSUE [--query TEXT] [--start N] [--max 50] [--json]
+
+Finds assignable users in one scope. Cloud returns accountId. Data Center
+returns its distinct key and name identities.
 `)
 	case "triage":
 		fmt.Fprint(w, `Usage:

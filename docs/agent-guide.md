@@ -95,6 +95,21 @@ jiractrl search --jql 'key = MYPROJ-123' --reconcile 10001 --json
 
 Write operations mutate Jira. Use them only with explicit intent.
 
+Discover valid values before constructing a write:
+
+```sh
+jiractrl projects get MYPROJ --json
+jiractrl projects issue-types MYPROJ --json
+jiractrl meta create --project MYPROJ --type 10001 --json
+jiractrl meta edit MYPROJ-123 --json
+jiractrl users assignable --issue MYPROJ-123 --query owain --json
+```
+
+Use field and issue-type IDs from metadata. Do not choose silently when an
+issue-type name returns multiple candidates. Use Cloud `accountId` values on
+Cloud and Data Center `name` or `key` identities on Data Center; they are not
+interchangeable.
+
 ```sh
 jiractrl create --project MYPROJ --type Task --summary "Short summary" --description "Details" --json
 jiractrl update MYPROJ-123 --summary "Updated summary"

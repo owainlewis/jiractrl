@@ -79,6 +79,26 @@ type SoftwareWriteReceipt struct {
 	Details   json.RawMessage `json:"details,omitempty"`
 }
 
+type RawAPIRequest struct {
+	Method     string
+	Path       string
+	Headers    map[string]string
+	Body       []byte
+	AllowWrite bool
+}
+
+type RawAPIResponse struct {
+	Method      string              `json:"method"`
+	Path        string              `json:"path"`
+	Status      int                 `json:"status"`
+	ContentType string              `json:"contentType,omitempty"`
+	Headers     map[string][]string `json:"headers,omitempty"`
+	Bytes       int                 `json:"bytes"`
+	JSON        bool                `json:"json"`
+	Body        any                 `json:"body,omitempty"`
+	BodyBase64  string              `json:"bodyBase64,omitempty"`
+}
+
 type ServerInfo struct {
 	BaseURL          string       `json:"baseUrl"`
 	Version          string       `json:"version"`

@@ -195,6 +195,34 @@ board on Data Center. HTTP 207 means Jira completed only part of the request;
 the command exits 1 and returns exact details. Inspect the affected issues
 before constructing any follow-up write.
 
+### Call an uncommon same-origin Jira resource
+
+Prefer typed commands. When no typed command covers a resource, use:
+
+```sh
+jiractrl api get '/rest/api/3/RESOURCE?expand=names' --json
+```
+
+The path must start with one slash and remain relative to the configured Jira
+origin. Absolute URLs, `//host` paths, traversal, fragments, backslashes, and
+redirects are blocked. Do not try to pass authorization, cookies, host,
+forwarding, connection, origin, browser security, or method override headers.
+
+For a write, make the method and confirmation explicit:
+
+```sh
+jiractrl api request /rest/api/3/RESOURCE --method PATCH \
+  --input request.json --allow-write --json
+```
+
+Input is one JSON value up to 1 MiB. Raw GET and HEAD requests may retry under
+the configured safe-read policy. POST, PUT, PATCH, and DELETE never retry.
+Inspect a failed or ambiguous write before repeating it.
+
+JSON responses appear in `data.body`. For any other content type, decode
+`data.bodyBase64` as standard base64; `data.contentType` and `data.bytes`
+describe the original response. Responses larger than 8 MiB are rejected.
+
 Assign with the identity form returned by the current deployment:
 
 ```sh

@@ -101,7 +101,8 @@ as fallbacks.
 
 Safe reads retry HTTP 429, 500, 502, 503, and 504 responses within the
 configured attempt and delay budgets. Jira's `Retry-After` header is honored
-up to `max_delay_ms`. Create, update, comment add/update/remove, and transition
+up to `max_delay_ms`. Raw `api` GET and HEAD requests use the same policy.
+Create, update, comment add/update/remove, transition, and raw API write
 requests are never retried automatically.
 
 ## JSON contract
@@ -568,6 +569,42 @@ Center.
 All planning writes are one-shot and are never retried. When Jira returns HTTP
 207, the command exits 1 and preserves Jira's exact partial details. With
 `--json`, that partial response is an `ok:false` envelope on stdout.
+
+## Constrained raw API
+
+Use the escape hatch for uncommon Jira REST resources that do not yet have a
+typed command:
+
+```sh
+jiractrl api get /rest/api/3/myself --json
+jiractrl api get '/rest/api/3/project/search?maxResults=10' \
+  --header 'Accept-Language: en-GB' --json
+jiractrl api request /rest/api/3/RESOURCE --method PATCH \
+  --input request.json --allow-write --json
+```
+
+The target must begin with exactly one `/` and stay on the configured Jira
+origin. Absolute and scheme-relative URLs, fragments, path traversal including
+encoded forms, backslashes, and authority changes fail before network access.
+The client never follows redirects.
+
+`api request` allows GET, HEAD, POST, PUT, PATCH, and DELETE. POST, PUT, PATCH,
+and DELETE require `--allow-write`. This confirmation is checked both by the
+CLI and the Jira adapter. Raw GET and HEAD requests use the configured bounded
+read retry policy. Raw writes are sent once and are never retried.
+
+`--input FILE|-` accepts one JSON value up to 1 MiB. Repeat `--header` for
+ordinary content negotiation or resource-specific headers. Authorization,
+proxy authorization, cookies, host, forwarding, connection, origin, browser
+security, method override, content length, and other protected headers cannot be overridden.
+JSON request bodies require an `application/json` or `+json` content type.
+
+With `--json`, the response includes the method, relative path, HTTP status,
+safe headers, content type, and byte count. JSON bodies are decoded into
+`data.body`. Other bytes are preserved losslessly in `data.bodyBase64`; decode
+that value with standard base64. Raw responses are capped at 8 MiB. Jira error
+responses retain the normal structured error, exit code, retry metadata, and
+credential redaction behavior.
 
 List profiles:
 

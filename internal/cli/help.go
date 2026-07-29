@@ -40,6 +40,13 @@ Read:
   boards issues|backlog ID   Read bounded board issues
   sprints list|get|issues    Inspect Jira Software sprints
   api get PATH               Call an uncommon same-origin Jira resource
+  jsm service-desks ...      Discover Jira Service Management desks
+  jsm queues ...             Discover agent queues
+  jsm request-types ...      Discover request types and required fields
+  jsm requests list|get      Read requests with SLA expansion
+  jsm comments list ISSUE    Read visible request comments
+  jsm participants list      Read request participants
+  jsm slas list ISSUE        Read request SLA cycles
   triage --jql JQL           Dry-run issue quality triage
 
 Write:
@@ -65,6 +72,9 @@ Write:
   rank --issue ISSUE (--before ISSUE|--after ISSUE)
   estimate ISSUE --board ID --value VALUE
   api request PATH --method METHOD --allow-write
+  jsm requests create ...    Create a validated customer request
+  jsm comments add ISSUE     Add an explicitly public/internal comment
+  jsm participants add|remove
 
 Global flags:
   --config PATH              Use a specific config.toml
@@ -340,6 +350,36 @@ retried.
 JSON responses are decoded in the normal success envelope. Non-JSON response
 bytes are preserved as bodyBase64 with contentType and bytes fields. Responses
 larger than 8 MiB are rejected.
+`)
+	case "jsm":
+		fmt.Fprint(w, `Usage:
+  jiractrl jsm service-desks list [--start N] [--max 50] [--json]
+  jiractrl jsm service-desks get SERVICE_DESK_ID [--json]
+  jiractrl jsm queues list SERVICE_DESK_ID [--start N] [--max 50] [--include-count] [--json]
+  jiractrl jsm request-types list SERVICE_DESK_ID [--start N] [--max 50] [--json]
+  jiractrl jsm request-types fields --service-desk ID --request-type ID [--json]
+  jiractrl jsm requests list [--service-desk ID] [--request-type ID] [--status STATUS] [--ownership VALUE] [--search TEXT] [--expand LIST] [--start N] [--max 50] [--json]
+  jiractrl jsm requests get ISSUE [--expand LIST] [--json]
+  jiractrl jsm requests create --service-desk ID --request-type ID --input FILE|- [--json]
+  jiractrl jsm comments list ISSUE [--start N] [--max 50] [--json]
+  jiractrl jsm comments add ISSUE (--body TEXT|--body-file PATH) --visibility public|internal [--json]
+  jiractrl jsm participants list ISSUE [--start N] [--max 50] [--json]
+  jiractrl jsm participants add|remove ISSUE (--account-id ID|--username USER) [--json]
+  jiractrl jsm slas list ISSUE [--start N] [--max 50] [--json]
+
+Jira Service Management is detected at runtime and is not required by platform
+or Jira Software commands. Reads return Jira's complete JSON objects. Request
+list and get expand participant, status, SLA, request type, and service desk by
+default. Page size is capped at 100.
+
+Request creation first reads request-type field metadata, then rejects missing,
+empty, or unknown requestFieldValues before POST. --input is one JSON object
+whose keys are Jira request field IDs.
+
+Comment visibility has no default. --visibility public sends public:true;
+--visibility internal sends public:false. Participant writes require
+--account-id on Cloud and --username on Data Center. JSM writes are one-shot
+and never retry automatically.
 `)
 	case "fields":
 		fmt.Fprint(w, `Usage:

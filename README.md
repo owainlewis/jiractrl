@@ -101,9 +101,9 @@ as fallbacks.
 
 Safe reads retry HTTP 429, 500, 502, 503, and 504 responses within the
 configured attempt and delay budgets. Jira's `Retry-After` header is honored
-up to `max_delay_ms`. Raw `api` GET and HEAD requests use the same policy.
-Create, update, comment add/update/remove, transition, and raw API write
-requests are never retried automatically.
+up to `max_delay_ms`. Raw `api` GET and HEAD requests and JSM reads use the same
+policy. Create, update, comment add/update/remove, transition, raw API writes,
+and JSM writes are never retried automatically.
 
 ## JSON contract
 
@@ -605,6 +605,71 @@ safe headers, content type, and byte count. JSON bodies are decoded into
 that value with standard base64. Raw responses are capped at 8 MiB. Jira error
 responses retain the normal structured error, exit code, retry metadata, and
 credential redaction behavior.
+
+## Jira Service Management
+
+The optional `jsm` command pack is capability-gated at runtime. Jira platform
+and Jira Software commands do not require JSM.
+
+Discover the request model:
+
+```sh
+jiractrl jsm service-desks list --json
+jiractrl jsm queues list 7 --include-count --json
+jiractrl jsm request-types list 7 --json
+jiractrl jsm request-types fields --service-desk 7 --request-type 9 --json
+```
+
+Read requests and SLA data:
+
+```sh
+jiractrl jsm requests list --service-desk 7 --status OPEN_REQUESTS --json
+jiractrl jsm requests get HELP-123 --json
+jiractrl jsm slas list HELP-123 --json
+```
+
+Request list and get expand participants, status, SLA, request type, and
+service desk by default. Jira's complete JSON objects are retained. All JSM
+collection reads accept `--start` and `--max`; the page size is capped at 100.
+
+Create a request with a JSON object keyed by the field IDs returned from
+`request-types fields`:
+
+```json
+{
+  "summary": "Laptop will not start",
+  "description": "The power light flashes twice."
+}
+```
+
+```sh
+jiractrl jsm requests create --service-desk 7 --request-type 9 \
+  --input request-fields.json --json
+```
+
+Before POST, `jiractrl` fetches the selected request type's field metadata and
+rejects missing required fields, empty required values, and unknown fields.
+
+Comment visibility is mandatory and appears explicitly in JSON output:
+
+```sh
+jiractrl jsm comments add HELP-123 --body "Customer update" \
+  --visibility public --json
+jiractrl jsm comments add HELP-123 --body "Agent-only note" \
+  --visibility internal --json
+```
+
+Manage participants with deployment-specific identities:
+
+```sh
+jiractrl jsm participants add HELP-123 --account-id CLOUD_ACCOUNT_ID --json
+jiractrl jsm participants remove HELP-123 --username dc-user --json
+```
+
+Cloud accepts `--account-id`; Data Center accepts `--username`. JSM create,
+comment, and participant writes are sent once and never retry automatically.
+A missing JSM product returns an `unsupported` JSON error. JSM HTTP 403
+responses return a `permission` JSON error.
 
 List profiles:
 

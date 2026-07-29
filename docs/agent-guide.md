@@ -223,6 +223,47 @@ JSON responses appear in `data.body`. For any other content type, decode
 `data.bodyBase64` as standard base64; `data.contentType` and `data.bytes`
 describe the original response. Responses larger than 8 MiB are rejected.
 
+### Work with Jira Service Management requests
+
+Confirm the optional product capability and discover the request schema:
+
+```sh
+jiractrl server-info --json
+jiractrl jsm service-desks list --json
+jiractrl jsm request-types list SERVICE_DESK_ID --json
+jiractrl jsm request-types fields \
+  --service-desk SERVICE_DESK_ID --request-type REQUEST_TYPE_ID --json
+```
+
+JSM collection reads use bounded `--start` and `--max` pagination. Request list
+and get include SLA, participant, status, request type, and service desk
+expansions by default. Use `jsm slas list ISSUE --json` for complete SLA cycle
+data.
+
+For create, pass one JSON object whose keys are the discovered request field
+IDs. The CLI refetches metadata and rejects missing required fields, empty
+required values, and unknown fields before the one-shot POST:
+
+```sh
+jiractrl jsm requests create --service-desk SERVICE_DESK_ID \
+  --request-type REQUEST_TYPE_ID --input request-fields.json --json
+```
+
+Never infer comment visibility. It is mandatory:
+
+```sh
+jiractrl jsm comments add ISSUE --body "Customer update" \
+  --visibility public --json
+jiractrl jsm comments add ISSUE --body "Agent-only note" \
+  --visibility internal --json
+```
+
+Use `--account-id` for Cloud participants and `--username` for Data Center
+participants. All JSM writes are one-shot. On HTTP 403, stop and report the
+structured `permission` error; do not retry with a different identity. An
+`unsupported` error means the JSM product endpoint was not found. Platform and
+Jira Software commands remain usable without JSM.
+
 Assign with the identity form returned by the current deployment:
 
 ```sh

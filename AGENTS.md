@@ -10,8 +10,8 @@ Prefer JSON output for agent workflows.
 
 ## Safety Rules
 
-- Treat read commands as safe: `auth check`, `search`, `get`, `fields`, `issue-fields`, `transitions`, `profiles`, `projects`, `meta`, `users`, `comments list`, `links types`, `links list`, `attachments list`, `attachments download`, `changelog`, `worklogs list`, `watchers list`, `boards list`, `boards get`, `boards issues`, `boards backlog`, `sprints list`, `sprints get`, `sprints issues`, `api get`, `api request --method GET|HEAD`, `triage`.
-- Treat write commands as mutating Jira: `create`, `update`, `assign`, `comments add`, `comments update`, `comments remove`, `comment`, `links add`, `links remove`, `attachments upload`, `attachments remove`, `worklogs add`, `worklogs update`, `watchers add`, `watchers remove`, `transition`, `bulk create`, `bulk update`, `bulk transition`, `sprints move`, `backlog move`, `rank`, `estimate`, `api request --method POST|PUT|PATCH|DELETE`.
+- Treat read commands as safe: `auth check`, `search`, `get`, `fields`, `issue-fields`, `transitions`, `profiles`, `projects`, `meta`, `users`, `comments list`, `links types`, `links list`, `attachments list`, `attachments download`, `changelog`, `worklogs list`, `watchers list`, `boards list`, `boards get`, `boards issues`, `boards backlog`, `sprints list`, `sprints get`, `sprints issues`, `api get`, `api request --method GET|HEAD`, `jsm service-desks`, `jsm queues list`, `jsm request-types`, `jsm requests list|get`, `jsm comments list`, `jsm participants list`, `jsm slas list`, `triage`.
+- Treat write commands as mutating Jira: `create`, `update`, `assign`, `comments add`, `comments update`, `comments remove`, `comment`, `links add`, `links remove`, `attachments upload`, `attachments remove`, `worklogs add`, `worklogs update`, `watchers add`, `watchers remove`, `transition`, `bulk create`, `bulk update`, `bulk transition`, `sprints move`, `backlog move`, `rank`, `estimate`, `api request --method POST|PUT|PATCH|DELETE`, `jsm requests create`, `jsm comments add`, `jsm participants add|remove`.
 - Before writing custom fields, run `jiractrl fields --json` and, when possible, `jiractrl issue-fields ISSUE --json`.
 - Do not guess custom field IDs.
 - Do not store tokens in prompts, logs, commits, or generated docs.
@@ -19,6 +19,8 @@ Prefer JSON output for agent workflows.
 - Use `--config PATH` when operating in a non-default environment.
 - Prefer typed commands. Raw `api` paths must stay relative to the configured
   Jira origin, and raw writes always require `--allow-write`.
+- For JSM, inspect request-type fields before creating requests. Always state
+  comment visibility. Use account IDs on Cloud and usernames on Data Center.
 
 ## Recommended Agent Flow
 

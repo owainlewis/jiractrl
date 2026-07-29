@@ -39,6 +39,7 @@ Read:
   boards list|get            Discover Jira Software boards
   boards issues|backlog ID   Read bounded board issues
   sprints list|get|issues    Inspect Jira Software sprints
+  api get PATH               Call an uncommon same-origin Jira resource
   triage --jql JQL           Dry-run issue quality triage
 
 Write:
@@ -63,6 +64,7 @@ Write:
   backlog move --issue ISSUE
   rank --issue ISSUE (--before ISSUE|--after ISSUE)
   estimate ISSUE --board ID --value VALUE
+  api request PATH --method METHOD --allow-write
 
 Global flags:
   --config PATH              Use a specific config.toml
@@ -318,6 +320,26 @@ partial results return exit 1 with exact details.
 
 Updates the estimate selected by the board's Jira Software configuration. The
 value is sent as a string. This is a one-shot write.
+`)
+	case "api":
+		fmt.Fprint(w, `Usage:
+  jiractrl api get /rest/api/3/RESOURCE [--header 'Name: Value'] [--json]
+  jiractrl api request /rest/api/3/RESOURCE --method GET|HEAD [--header 'Name: Value'] [--json]
+  jiractrl api request /rest/api/3/RESOURCE --method POST|PUT|PATCH|DELETE [--input FILE|-] --allow-write [--header 'Name: Value'] [--json]
+
+Only paths beginning with exactly one slash are accepted. Absolute URLs,
+scheme-relative URLs, fragments, traversal, backslashes, and authority changes
+are rejected before network access. Redirects are never followed.
+
+--input accepts one JSON value up to 1 MiB. Authorization, cookies, host,
+forwarding, connection, origin, browser security, content length, and other
+protected headers, including method overrides, cannot be set. GET and HEAD may
+use normal bounded read retries. Writes require --allow-write and are never
+retried.
+
+JSON responses are decoded in the normal success envelope. Non-JSON response
+bytes are preserved as bodyBase64 with contentType and bytes fields. Responses
+larger than 8 MiB are rejected.
 `)
 	case "fields":
 		fmt.Fprint(w, `Usage:

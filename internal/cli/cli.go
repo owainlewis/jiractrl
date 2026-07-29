@@ -102,6 +102,8 @@ func (a App) Run(args []string) error {
 		return a.runRank(args[1:], configPath)
 	case "estimate":
 		return a.runEstimate(args[1:], configPath)
+	case "api":
+		return a.runAPI(args[1:], configPath)
 	case "triage":
 		return a.runTriage(args[1:], configPath)
 	case "help", "-h", "--help":

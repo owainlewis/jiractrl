@@ -195,12 +195,16 @@ func (c *Client) RequireSoftware(ctx context.Context) error {
 }
 
 func (c *Client) Deployment(ctx context.Context) (Deployment, error) {
+	return c.detectDeployment(ctx, c.fetchServerInfo)
+}
+
+func (c *Client) detectDeployment(ctx context.Context, fetch func(context.Context) (*ServerInfo, error)) (Deployment, error) {
 	c.detectOnce.Do(func() {
 		if c.deploymentOverride != "" && c.deploymentOverride != DeploymentAuto {
 			c.deployment = c.deploymentOverride
 			return
 		}
-		info, err := c.fetchServerInfo(ctx)
+		info, err := fetch(ctx)
 		if err != nil {
 			c.deploymentErr = fmt.Errorf("detect Jira deployment: %w; set jira.deployment to cloud or data_center to override detection", err)
 			return

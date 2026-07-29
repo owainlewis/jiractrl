@@ -31,6 +31,13 @@ func TestServerInfoDetectsDeployment(t *testing.T) {
 					_, _ = w.Write([]byte(`{"values":[]}`))
 					return
 				}
+				if r.URL.Path == "/rest/servicedeskapi/servicedesk" {
+					if r.URL.Query().Get("limit") != "1" {
+						t.Fatalf("query = %q", r.URL.RawQuery)
+					}
+					_, _ = w.Write([]byte(`{"values":[]}`))
+					return
+				}
 				if r.URL.Path != "/rest/api/2/serverInfo" {
 					http.NotFound(w, r)
 					return
@@ -60,6 +67,9 @@ func TestServerInfoDetectsDeployment(t *testing.T) {
 			}
 			if info.Capabilities.Software != CapabilityAvailable {
 				t.Fatalf("software capability = %q", info.Capabilities.Software)
+			}
+			if info.Capabilities.ServiceManagement != CapabilityAvailable {
+				t.Fatalf("service management capability = %q", info.Capabilities.ServiceManagement)
 			}
 		})
 	}

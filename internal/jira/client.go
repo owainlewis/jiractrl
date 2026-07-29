@@ -28,6 +28,9 @@ type Client struct {
 	softwareOnce       sync.Once
 	softwareStatus     CapabilityStatus
 	softwareErr        error
+	jsmOnce            sync.Once
+	jsmStatus          CapabilityStatus
+	jsmErr             error
 	http               *http.Client
 	retry              RetryPolicy
 	sleep              func(context.Context, time.Duration) error
@@ -150,6 +153,8 @@ func (c *Client) ServerInfo(ctx context.Context) (*ServerInfo, error) {
 
 	status, _ := c.softwareCapability(ctx, info.Deployment)
 	info.Capabilities.Software = status
+	status, _ = c.serviceManagementCapability(ctx, info.Deployment)
+	info.Capabilities.ServiceManagement = status
 	return info, nil
 }
 

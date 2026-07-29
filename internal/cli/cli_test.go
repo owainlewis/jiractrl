@@ -32,6 +32,10 @@ func TestRunServerInfoJSON(t *testing.T) {
 			_, _ = w.Write([]byte(`{"values":[]}`))
 			return
 		}
+		if r.URL.Path == "/rest/servicedeskapi/servicedesk" {
+			_, _ = w.Write([]byte(`{"values":[]}`))
+			return
+		}
 		if r.URL.Path != "/rest/api/2/serverInfo" {
 			t.Fatalf("path = %q", r.URL.Path)
 		}
@@ -54,6 +58,9 @@ func TestRunServerInfoJSON(t *testing.T) {
 		t.Fatalf("stdout = %s", stdout.String())
 	}
 	if !strings.Contains(stdout.String(), `"deploymentSource": "detected"`) {
+		t.Fatalf("stdout = %s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), `"service_management": "available"`) {
 		t.Fatalf("stdout = %s", stdout.String())
 	}
 	var envelope struct {

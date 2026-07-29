@@ -98,6 +98,8 @@ func classifyError(err error) contractError {
 		Kind:    "local",
 		Message: err.Error(),
 	}
+	var permission *jira.PermissionError
+	permissionDenied := errors.As(err, &permission)
 
 	var unsupported *jira.UnsupportedCapabilityError
 	if errors.As(err, &unsupported) {
@@ -134,14 +136,16 @@ func classifyError(err error) contractError {
 	result.Status = jiraErr.StatusCode
 	result.ErrorMessages = jiraErr.ErrorMessages
 	result.Fields = jiraErr.FieldErrors
-	switch jiraErr.StatusCode {
-	case http.StatusUnauthorized, http.StatusForbidden:
+	switch {
+	case permissionDenied:
+		result.Kind = "permission"
+	case jiraErr.StatusCode == http.StatusUnauthorized || jiraErr.StatusCode == http.StatusForbidden:
 		result.Kind = "auth"
-	case http.StatusNotFound:
+	case jiraErr.StatusCode == http.StatusNotFound:
 		result.Kind = "not_found"
-	case http.StatusTooManyRequests:
+	case jiraErr.StatusCode == http.StatusTooManyRequests:
 		result.Kind = "rate_limited"
-	case http.StatusConflict:
+	case jiraErr.StatusCode == http.StatusConflict:
 		result.Kind = "conflict"
 	default:
 		if jiraErr.StatusCode >= 500 {

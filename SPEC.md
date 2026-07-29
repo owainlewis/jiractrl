@@ -1,223 +1,176 @@
 # jiractrl Specification
 
-`jiractrl` is a command line control plane for Jira, designed for AI agents and humans who need predictable, scriptable Jira operations.
-
-The project should stay small, portable, and open-source friendly. It should not contain company-specific assumptions, private Jira URLs, or workflow rules that only make sense for one organization.
+`jiractrl` is a small command line control plane for Jira. It gives AI agents
+and humans a generic, predictable interface without encoding one
+organization's workflow in the binary.
 
 ## Goals
 
-- Provide a clean CLI for common Jira operations.
-- Make every useful operation available in machine-readable JSON.
-- Support reusable profiles for saved JQL and defaults.
-- Use `config.toml` instead of `.env` for auth and connection settings.
-- Be pleasant for humans and reliable for agents.
-- Ship as a single Go binary with one-line install support.
+- Cover the common Jira issue, collaboration, planning, and service workflows.
+- Make normalized JSON available for every Jira operation command.
+- Preserve exact Jira JSON where normalization would lose useful data.
+- Require discovery before writes that depend on site-specific identifiers.
+- Bound pagination, retries, input size, and bulk work.
+- Ship as one Go binary for macOS and Linux.
 
-## Non-Goals
+## Non-goals
 
-- Replace Jira.
-- Encode one company's process into the core CLI.
-- Require a database or background service.
-- Require AI APIs. The CLI should provide clean data and useful heuristics, not depend on a model.
+- Replace Jira or model every administrative feature.
+- Hide Jira permissions, workflows, custom fields, or product boundaries.
+- Run a database, daemon, browser, or AI API.
+- Put organization-specific automation in the generic core.
 
-## Name
+Profiles, wrapper scripts, and downstream agent instructions own local policy.
 
-Binary name: `jiractrl`
+## Compatibility
 
-Working description:
+The Jira platform command set supports Jira Cloud and Jira Data Center. Jira
+Software commands require the Software REST capability. Jira Service
+Management commands require the JSM REST capability. Cloud uses `accountId`
+and ADF where Jira requires them. Data Center uses exact usernames and string
+rich-text bodies.
 
-> A control plane for Jira for AI agents.
+The detailed matrix and tested workflow live in
+[`docs/agent-guide.md`](docs/agent-guide.md).
 
 ## Configuration
 
-Default config path:
-
-```text
-~/.config/jiractrl/config.toml
-```
-
-Optional override:
-
-```sh
-jiractrl --config ./config.toml ...
-```
-
-Initial TOML shape:
+The default file is `~/.config/jiractrl/config.toml`. `--config PATH` selects a
+different environment.
 
 ```toml
 [jira]
 base_url = "https://jira.example.com"
-token = "..."
+token = "read-from-private-config"
+deployment = "auto"
+# Jira Cloud only:
+# email = "agent@example.com"
 
 [defaults]
 max_results = 50
 output = "text"
 
-[profiles.my_open]
-jql = "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC"
-fields = ["summary", "status", "assignee", "priority", "issuetype", "created", "updated"]
-max_results = 50
+[retry]
+max_attempts = 3
+base_delay_ms = 500
+max_delay_ms = 30000
 
 [profiles.project_recent]
-jql = "project = MYPROJ AND updated >= -7d ORDER BY updated DESC"
-max_results = 100
+jql = "project = MYPROJ ORDER BY updated DESC"
+fields = ["summary", "status", "assignee", "priority", "issuetype"]
+max_results = 50
 ```
 
-Environment variables may override config for CI:
+Supported primary overrides are `JIRACTRL_CONFIG`, `JIRACTRL_BASE_URL`,
+`JIRACTRL_TOKEN`, `JIRACTRL_EMAIL`, and `JIRACTRL_DEPLOYMENT`. Legacy
+`JIRA_BASE_URL`, `JIRA_PAT`, `JIRA_TOKEN`, and `JIRA_EMAIL` remain fallbacks.
+Secrets must not appear in prompts, logs, fixtures, or versioned files.
 
-- `JIRACTRL_BASE_URL`
-- `JIRACTRL_TOKEN`
-- `JIRA_BASE_URL`
-- `JIRA_PAT`
-- `JIRA_TOKEN`
+## Public command surface
 
-## Core Commands
+| Capability | Commands |
+| --- | --- |
+| Connection | `auth check`, `server-info` |
+| Issue reads | `search`, `get`, `fields`, `issue-fields`, `triage` |
+| Discovery | `projects`, `meta`, `users assignable`, `transitions`, `profiles` |
+| Issue writes | `create`, `update`, `assign`, `transition`, `bulk` |
+| Collaboration | `comments`, `links`, `attachments`, `changelog`, `worklogs`, `watchers` |
+| Jira Software | `boards`, `sprints`, `backlog`, `rank`, `estimate` |
+| Jira Service Management | `jsm service-desks`, `queues`, `request-types`, `requests`, `comments`, `participants`, `slas` |
+| Escape hatch | constrained same-origin `api` |
 
-### Auth
+All Jira examples in the public guide use `--json`. Structured mutations use
+`--input FILE|-`. Create, update, transition, and bulk operations support
+`--dry-run`.
+
+## JSON and exit contract
+
+Normalized success:
+
+```json
+{"ok":true,"data":{"key":"MYPROJ-123"}}
+```
+
+Normalized failure on stderr:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "kind": "validation",
+    "message": "field is not valid"
+  }
+}
+```
+
+Stable error kinds include `local`, `transport`, `validation`, `ambiguous`,
+`auth`, `permission`, `not_found`, `rate_limited`, `conflict`, `server`, and
+`unsupported`. Server field errors and retry metadata are retained when Jira
+provides them. Credential material is redacted.
+
+`get --raw-json` and single-page `search --raw-json` return exact Jira bytes
+without the envelope.
+
+| Exit | Meaning |
+| ---: | --- |
+| 0 | Success |
+| 1 | Local, usage, config, transport, partial, or unknown failure |
+| 2 | Authentication or permission rejection |
+| 3 | Not found |
+| 4 | Other Jira 4xx validation rejection |
+| 5 | Jira 5xx |
+| 6 | Rate limited |
+| 7 | Conflict |
+
+## Pagination and consistency
+
+JSON page objects expose `hasMore` and either an opaque cursor or an offset.
+Opaque cursors must be returned unchanged. Multi-page commands support a hard
+`--limit` where practical. Commands without `--all` expose the next offset for
+an explicit loop.
+
+Cloud search uses enhanced JQL token pagination. Data Center search uses
+offsets behind the same public cursor contract. Cloud search may accept up to
+50 numeric issue IDs through `--reconcile` after a write.
+
+No command may silently claim a partial page is complete.
+
+## Mutation safety
+
+- Mutations require a dedicated command or explicit raw `--allow-write`.
+- Custom field, issue type, user, transition, planning, and JSM identifiers
+  come from discovery. The CLI must not guess.
+- Structured input preserves Jira JSON types and is size-limited.
+- A labels field update retains Jira's replacement semantics, so callers must
+  read and preserve labels that should remain.
+- Safe reads may retry bounded 429 and retryable 5xx responses. Writes are
+  never retried automatically.
+- Bulk input is validated before the first write and has a hard item limit.
+  Per-item 4xx failures continue. Ambiguous transport, 429, and 5xx outcomes
+  stop later writes and mark them skipped.
+- Raw API requests stay on the configured origin, reject dangerous paths,
+  redirects, and protected headers, limit JSON input to 1 MiB, and require
+  `--allow-write` for mutations.
+
+## Installation and release
+
+Supported installation paths:
 
 ```sh
-jiractrl auth check
+curl -fsSL https://github.com/owainlewis/jiractrl/releases/latest/download/install.sh | sh
+go install github.com/owainlewis/jiractrl@latest
 ```
 
-Checks the configured Jira connection and token.
+Tagged releases build checksummed Darwin and Linux binaries for arm64 and
+amd64. CI runs formatting, tests, vet, and builds.
 
-### Search
+## Verification
 
-```sh
-jiractrl search --jql 'project = MYPROJ ORDER BY updated DESC'
-jiractrl search --profile project_recent
-jiractrl search --profile project_recent --json
-```
+The end-to-end local Jira fixture runs the public flow from authentication and
+discovery through create, attachment, link, assignment, comment, transition,
+complete changelog pagination, and final verification. It asserts that
+site-specific IDs are discovered and carried into writes.
 
-Search issues using explicit JQL or a configured profile.
-
-### Get
-
-```sh
-jiractrl get MYPROJ-123
-jiractrl get MYPROJ-123 --json
-```
-
-Fetch a single issue.
-
-### Create
-
-```sh
-jiractrl create --project MYPROJ --type Task --summary "Fix thing" --description "Details"
-jiractrl create --json-input issue.json
-```
-
-Create an issue.
-
-### Update
-
-```sh
-jiractrl update MYPROJ-123 --summary "New summary"
-jiractrl update MYPROJ-123 --description-file body.md
-jiractrl update MYPROJ-123 --field customfield_12345=value
-```
-
-Update issue fields.
-
-### Comment
-
-```sh
-jiractrl comment MYPROJ-123 --body "Follow-up note"
-jiractrl comment MYPROJ-123 --body-file comment.md
-```
-
-Add a comment.
-
-### Transition
-
-```sh
-jiractrl transitions MYPROJ-123
-jiractrl transition MYPROJ-123 --to "In Progress"
-```
-
-List and apply workflow transitions.
-
-### Profiles
-
-```sh
-jiractrl profiles list
-jiractrl profiles show project_recent
-jiractrl search --profile project_recent
-```
-
-Profiles are read from `config.toml`.
-
-### Fields
-
-```sh
-jiractrl fields
-jiractrl issue-fields MYPROJ-123
-```
-
-Support discovery of custom fields and issue shape.
-
-## Agent-Friendly Output
-
-Every command that reads or mutates Jira should support `--json`.
-
-JSON should be normalized where useful. Raw Jira JSON can be exposed with `--raw-json`.
-
-Text output should be concise and stable enough for humans, but agents should prefer JSON.
-
-## Installation
-
-Target one-line install:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/owainlewis/jiractrl/main/install.sh | sh
-```
-
-Package options:
-
-- GitHub Releases with Darwin/Linux binaries.
-- Homebrew tap later if the project becomes useful.
-- `go install github.com/owainlewis/jiractrl@latest` once published.
-
-## CI/CD
-
-Use GitHub Actions for:
-
-- `go test ./...`
-- `go vet ./...`
-- `gofmt` check
-- build on Linux and macOS
-- release binaries on tagged versions
-
-Release workflow:
-
-- Tags use `vX.Y.Z`.
-- Build `jiractrl` for at least:
-  - `darwin/arm64`
-  - `darwin/amd64`
-  - `linux/amd64`
-  - `linux/arm64`
-- Attach checksums.
-
-## Release Polish
-
-Before public release:
-
-- Rename binary and docs from `jira` to `jiractrl`.
-- Remove private defaults from docs and code.
-- Add license.
-- Add examples.
-- Add config sample.
-- Add install script.
-- Add CI.
-- Add a small test suite around config, profile resolution, and command parsing.
-- Avoid writing secrets to logs or output.
-
-## Design Principles
-
-- Generic core, workflow-specific profiles.
-- Configuration over hardcoded defaults.
-- JSON-first for agents.
-- Text output for humans.
-- Clear errors.
-- No destructive operation without an explicit command.
-- Safe by default: read operations first, write operations obvious.
+Every command family is tied to an automated or recorded manual check in
+[`docs/command-verification.md`](docs/command-verification.md). Markdown shell
+examples are syntax-checked in the Go test suite.

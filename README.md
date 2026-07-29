@@ -83,7 +83,7 @@ max_results = 100
 Use a custom config:
 
 ```sh
-jiractrl --config ./config.toml auth check
+jiractrl --config ./config.toml auth check --json
 ```
 
 Environment variables can override config values:
@@ -107,7 +107,8 @@ and JSM writes are never retried automatically.
 
 ## JSON contract
 
-Every command accepts `--json`. Successful output has one stable envelope:
+Every Jira operation accepts `--json`. Help output remains terminal text.
+Successful JSON output has one stable envelope:
 
 ```json
 {"ok":true,"data":{"key":"MYPROJ-123"}}
@@ -131,10 +132,10 @@ Failures are written to stderr:
 }
 ```
 
-Error kinds include `local`, `transport`, `validation`, `auth`, `not_found`,
-`rate_limited`, `conflict`, `server`, and `unsupported`. Jira field errors and
-rate-limit metadata are included when the server provides them. Credentials
-are redacted from Jira error data.
+Error kinds include `local`, `transport`, `validation`, `auth`, `permission`,
+`not_found`, `rate_limited`, `conflict`, `server`, and `unsupported`. Jira
+field errors and rate-limit metadata are included when the server provides
+them. Credentials are redacted from Jira error data.
 
 `get --raw-json` and single-page `search --raw-json` return the exact Jira
 response without the envelope. Use this only when the normalized contract is
@@ -177,7 +178,7 @@ jiractrl server-info --json
 Search with JQL:
 
 ```sh
-jiractrl search --jql 'project = MYPROJ ORDER BY updated DESC' --max 20
+jiractrl search --jql 'project = MYPROJ ORDER BY updated DESC' --max 20 --json
 ```
 
 Search with a profile:
@@ -195,7 +196,7 @@ jiractrl search --profile project_recent --all --limit 500 --json
 Continue from the opaque `page.next` value returned by JSON output:
 
 ```sh
-jiractrl search --profile project_recent --cursor 'CONTINUATION'
+jiractrl search --profile project_recent --cursor 'CONTINUATION' --json
 ```
 
 `search` uses Jira Cloud enhanced JQL search and Data Center's supported
@@ -205,7 +206,7 @@ offset search behind the same cursor interface. `--max` is the page size;
 Get an issue:
 
 ```sh
-jiractrl get MYPROJ-123
+jiractrl get MYPROJ-123 --json
 ```
 
 Return the exact Jira response:
@@ -217,7 +218,8 @@ jiractrl get MYPROJ-123 --raw-json
 Create an issue:
 
 ```sh
-jiractrl create --project MYPROJ --type Task --summary "Fix the thing" --description "Details"
+jiractrl create --project MYPROJ --type Task \
+  --summary "Fix the thing" --description "Details" --json
 ```
 
 Use typed Jira JSON when fields need booleans, numbers, nulls, arrays, or
@@ -262,15 +264,15 @@ Preview the exact method, deployment-aware path, and body without sending a
 mutation:
 
 ```sh
-jiractrl create --input issue.json --dry-run
-jiractrl update MYPROJ-123 --input update.json --dry-run
-jiractrl transition MYPROJ-123 --input transition.json --dry-run
+jiractrl create --input issue.json --dry-run --json
+jiractrl update MYPROJ-123 --input update.json --dry-run --json
+jiractrl transition MYPROJ-123 --input transition.json --dry-run --json
 ```
 
 Update an issue:
 
 ```sh
-jiractrl update MYPROJ-123 --summary "Updated summary"
+jiractrl update MYPROJ-123 --summary "Updated summary" --json
 ```
 
 Assign with a deployment-native identity or unassign:
@@ -320,9 +322,9 @@ jiractrl comments list MYPROJ-123 --all --limit 500 --json
 Add, update, or remove a comment:
 
 ```sh
-jiractrl comments add MYPROJ-123 --body "Adding **important** context."
-jiractrl comments update MYPROJ-123 10042 --body-file corrected.md
-jiractrl comments remove MYPROJ-123 10042
+jiractrl comments add MYPROJ-123 --body "Adding **important** context." --json
+jiractrl comments update MYPROJ-123 10042 --body-file corrected.md --json
+jiractrl comments remove MYPROJ-123 10042 --json
 ```
 
 `jiractrl comment ISSUE --body TEXT` remains an alias for `comments add`.
@@ -356,25 +358,25 @@ jiractrl comments add MYPROJ-123 --input comment.json --json
 List transitions:
 
 ```sh
-jiractrl transitions MYPROJ-123
+jiractrl transitions MYPROJ-123 --json
 ```
 
 Transition:
 
 ```sh
-jiractrl transition MYPROJ-123 --to "In Progress"
+jiractrl transition MYPROJ-123 --to "In Progress" --json
 ```
 
 List fields:
 
 ```sh
-jiractrl fields
+jiractrl fields --json
 ```
 
 Inspect populated fields on an issue:
 
 ```sh
-jiractrl issue-fields MYPROJ-123
+jiractrl issue-fields MYPROJ-123 --json
 ```
 
 Discover valid projects, issue types, fields, and assignees before a write:
@@ -413,7 +415,7 @@ Link direction is always explicit. For example, `--outward MYPROJ-123
 ```sh
 jiractrl links add --type Blocks \
   --outward MYPROJ-123 --inward MYPROJ-456 --json
-jiractrl links remove 10042
+jiractrl links remove 10042 --json
 ```
 
 Jira reports success when an add duplicates an existing link and does not
@@ -425,8 +427,8 @@ List and transfer attachments:
 ```sh
 jiractrl attachments list MYPROJ-123 --json
 jiractrl attachments upload MYPROJ-123 --file ./evidence.txt --json
-jiractrl attachments download 10001 --output ./downloads/evidence.txt
-jiractrl attachments remove 10001
+jiractrl attachments download 10001 --output ./downloads/evidence.txt --json
+jiractrl attachments remove 10001 --json
 ```
 
 Uploads stream the file as Jira's required multipart `file` field with
@@ -464,9 +466,9 @@ Inspect and change watcher state:
 
 ```sh
 jiractrl watchers list MYPROJ-123 --json
-jiractrl watchers add MYPROJ-123 --self
-jiractrl watchers add MYPROJ-123 --account-id ACCOUNT_ID  # Cloud
-jiractrl watchers remove MYPROJ-123 --user fred           # Data Center
+jiractrl watchers add MYPROJ-123 --self --json
+jiractrl watchers add MYPROJ-123 --account-id ACCOUNT_ID --json  # Cloud
+jiractrl watchers remove MYPROJ-123 --user fred --json           # Data Center
 ```
 
 Cloud accepts account IDs and Data Center accepts usernames. Adding or
@@ -480,7 +482,7 @@ Run create, update, or transition inputs from a JSON array or JSONL file:
 
 ```sh
 jiractrl bulk create --input creates.jsonl --json
-jiractrl bulk update --input updates.json --dry-run
+jiractrl bulk update --input updates.json --dry-run --json
 jiractrl bulk transition --input transitions.jsonl --max-items 100 --json
 ```
 
@@ -674,21 +676,22 @@ responses return a `permission` JSON error.
 List profiles:
 
 ```sh
-jiractrl profiles list
+jiractrl profiles list --json
 ```
 
 Show a profile:
 
 ```sh
-jiractrl profiles show project_recent
+jiractrl profiles show project_recent --json
 ```
 
 ## Project Docs
 
-- `SPEC.md` defines the product direction.
-- `TASKS.md` tracks implementation and release work.
-- `AGENTS.md` gives operating guidance for AI agents.
-- `docs/agent-guide.md` has practical recipes for using the CLI safely.
+- [Agent guide](docs/agent-guide.md)
+- [Command verification inventory](docs/command-verification.md)
+- [Specification](SPEC.md)
+- [Task list](TASKS.md)
+- [Agent operating guidance](AGENTS.md)
 
 ## Development
 
